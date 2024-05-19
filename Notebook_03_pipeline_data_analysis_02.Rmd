@@ -1,0 +1,628 @@
+---
+title: "AF2conform_data_analysis"
+author: "Neshatul Haque"
+date: '2023-03-16'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+dua <- NULL
+dua <- df02
+dim(dua)
+
+
+#list of SP_C95_XX10 uniwue member
+lSP_C95_XX10 <- dua$SP_C95_XX10 %>% unique()
+dua$SP_C95_XX10 %>% unique() %>% length()
+
+getDomClstr2 <- function(i, clust_name){
+  out <- list()
+  Uni <- dua$SP_PRIMARY[dua[[clust_name]]==i]
+  if(length(Uni!=0)){
+    out$ProtSpecificDomID <- i
+    
+    dfselect <- dua[dua[[clust_name]]==i,]
+    out$nClass <- length(unique(dfselect$Class))
+    out$UnipId <- paste0(unique(dfselect$SP_PRIMARY), collapse = ";")
+    out$fold <- paste0(unique(dfselect$fold), collapse = ";")
+    out$nfold <- length(unique(dfselect$fold))
+    out$nUni <- length(unique(Uni))
+    out$nDom <- length(dfselect$Dom)
+    
+    #Dom length
+    DomLenlist <- dfselect$Dom_Len
+    out$DomLenmin <- min(DomLenlist)
+    out$DomLenmean <- mean(DomLenlist) %>% round(3)
+    out$DomLenq50 <- median(DomLenlist)
+    out$DomLenmax <- max(DomLenlist)
+    
+    #RMSD
+    rmdlist <- dfselect$RMSD
+    out$Rmin <- min(rmdlist)
+    out$Rmean <- mean(rmdlist) %>% round(3)
+    out$Rq50 <- median(rmdlist)
+    out$Rmax <- max(rmdlist)
+    #R100
+    rmdlist <- dfselect$R100
+    out$R100min <- min(rmdlist)
+    out$R100mean <- mean(rmdlist) %>% round(3)
+    out$R100q50 <- median(rmdlist)
+    out$R100max <- max(rmdlist)
+    
+    
+    # Dist difference
+    didi <- dfselect$DistDiff
+    out$DistDiffmin <- min(didi)
+    out$DistDiffmean <- mean(didi) %>% round(3)
+    out$DistDiffq50 <- median(didi)
+    out$DistDiffmax <- max(didi)    
+
+    #cth helix
+    helixlist <- dfselect$cth_Helix_count
+    out$cthHlxmin <- min(helixlist)
+    out$cthHlxmean <- mean(helixlist) %>% round(3)
+    out$cthHlxq50 <- median(helixlist)
+    out$cthHlxmax <- max(helixlist)
+
+    #cth sheet
+    sheetlist <- dfselect$cth_Sheet_count
+    out$cthShtmin <- min(sheetlist)
+    out$cthShtmean <- mean(sheetlist) %>% round(3)
+    out$cthShtq50 <- median(sheetlist)
+    out$cthShtmax <- max(sheetlist)
+
+    #cth loop
+    looplist <- dfselect$cth_loop_count
+    out$cthLpmin <- min(looplist)
+    out$cthLpmean <- mean(looplist) %>% round(3)
+    out$cthLpq50 <- median(looplist)
+    out$cthLpmax <- max(looplist)
+    out$cthLpsd <- sd(looplist) %>% round(3)
+  
+
+    #Cath SecStr
+    SecStrlist <- dfselect$cth_secstr_count
+    out$cthSSEmin <- min(SecStrlist)
+    out$cthSSEmean <- mean(SecStrlist) %>% round(3)
+    out$cthSSEq50 <- median(SecStrlist)
+    out$cthSSEmax <- max(SecStrlist) 
+    
+    #Af2 SecStr
+    SecStrlist2 <- dfselect$af2_secstr_count
+    out$af2SSEmin <- min(SecStrlist2)
+    out$af2SSEmean <- mean(SecStrlist2) %>% round(3)
+    out$af2SSEq50 <- median(SecStrlist2)
+    out$af2SSEmax <- max(SecStrlist2)
+
+
+    #Area by Vol ratio
+    AVlist <- with(dfselect, Area/Vol) %>% round(3)
+    out$AVmin <- min(AVlist)
+    out$AVmean <- mean(AVlist) %>% round(3)
+    out$AVq50 <- median(AVlist)
+    out$AVmax <- max(AVlist)
+
+    #secondary structure diference
+    secstrlist <- with(dfselect, cth_secstr_count-af2_secstr_count)
+    out$nSecStr_diffmin <- min(secstrlist)
+    out$nSecStr_diffmean <- mean(secstrlist) %>% round(3)
+    out$nSecStr_diffq50 <- median(secstrlist)
+    out$nSecStr_diffmax <- max(secstrlist)
+
+    
+    #loop diference
+    looplist <- with(dfselect, cth_loop_count - af2_loop_count)
+    out$nLoop_diffmin <- min(looplist)
+    out$nloop_diffmean <- mean(looplist) %>% round(3)
+    out$nLoop_diffq50 <- median(looplist)
+    out$nLoop_diffmax <- max(looplist)
+
+    #BE ratio
+    BElist <- dfselect$BE80_ratio %>% round(3)
+    out$BEmin <- min(BElist)
+    out$BEmean <- mean(BElist) %>% round(3)
+    out$BEq50 <- median(BElist)
+    out$BEmax <- max(BElist)
+
+  }
+  return(as.data.frame(out))
+}
+
+
+# Grouped based on protein specific subdomains
+
+SP_C95_XX10_list <- dua$SP_C95_XX10 %>% unique()
+dfSPC95XX10 <- do.call(rbind, pbmcapply::pbmclapply(SP_C95_XX10_list, function(x){
+  getDomClstr2(x, "SP_C95_XX10")
+}, mc.cores = 48))
+
+uniq_fold <- dua$fold %>% unique()
+dffold <- do.call(rbind, pbmcapply::pbmclapply(uniq_fold, function(x){
+  getDomClstr2(x, "fold")
+}, mc.cores = 48))
+
+
+# # df by sub domain clustering
+# df.sd.grp <- df02 %>% group_by(SP_C95_XX10) %>% mutate(Rq50 = median(RMSD)) 
+# df02 %>% group_by(SP_C95_XX10) %>% summarise(Rq50 = median(RMSD)) %>% 
+#   ggplot(., aes(x=Rq50)) + geom_density()
+# 
+# df02[1:100000, ] %>% group_by(SP_C95_XX10) %>% summarise(Rq50 = median(RMSD), Uni=paste0(unique(SP_PRIMARY), collapse = ";")) %>% system.time()
+```
+
+
+## plot RMSD and R100 median distribution
+```{r}
+
+rms <- c("Rq50", "R100q50")
+
+df_plot <- NULL
+df_plot <- dfSPC95XX10 %>% select(all_of(rms)) %>% filter(complete.cases(.))
+
+#Density of x1, x2 ie rmsd FatCat rmsd (FCrmsd)
+dx1 <- density(df_plot[[rms[1]]], bw = 0.18, na.rm = TRUE)
+dx2 <- density(df_plot[[rms[2]]], bw = 0.18, na.rm = TRUE)
+
+r1 <- data.frame(x = dx1$x,
+                      y = dx1$y,
+                      rmsd = rms[1])
+
+r2 <- data.frame(x = dx2$x,
+                      y = dx2$y,
+                      rmsd = rms[2])
+
+
+r12 <- rbind(r1, r2) %>% filter(x>=0)
+
+pl <- ggplot(r12, aes(x, y))+
+  geom_line(aes(color = rmsd)) +
+  scale_x_log10() +
+  xlab("RMSD") + ylab(paste0("Fraction of Domains"))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_bw()+
+  ggtitle(paste0("RMSD distribution"))
+
+
+# plot_data <-  as.data.frame(ggplot_build(pl)$data) %>% filter(!is.na(y)) %>% filter(!is.na(x)) %>% 
+#   filter(!is.nan(y)) %>% filter(!is.nan(x)) 
+
+cutof1 <- 2.5
+cutof2 <- 5
+bottom1 <- r12 %>%
+  group_by(rmsd) %>%
+  filter(x>=cutof1) %>% 
+  ungroup()
+
+bottom2 <- r12 %>%
+  group_by(rmsd) %>%
+  filter(x>=cutof2) %>% 
+  ungroup()
+
+#max height
+mxh <- max(r12$y)
+
+# segments <- bottom %>%
+#   group_by(rmsd) %>%
+#   summarise(x = min(x),
+#             y = mxh)
+
+p.main <- pl+ geom_area(data = bottom1,
+              aes(x = x,
+                  y = y,
+                  fill = rmsd),
+              alpha = 0.25,
+              position = "identity") +
+ geom_area(data = bottom2,
+              aes(x = x,
+                  y = y,
+                  fill = rmsd),
+                  alpha = 0.99,
+                  position = "identity")+
+
+  geom_vline(xintercept = cutof1, linetype="dashed", color = 'gray') +
+  annotate(geom = 'text', x = cutof1, y = 1.15, color = 'black', label = "RMSD 2.5", hjust = +1.1) +
+  geom_vline(xintercept = cutof2, linetype="dashed", color = 'gray') +
+  annotate(geom = 'text', x = cutof2, y = 1.15, color = 'black', label = "RMSD 5.0", hjust = -0.1)
+
+
+```
+
+#Generate the inset
+```{r}
+
+# limit range in x and y
+xl <- c(2.4, 8); yl <-c(0,0.05)
+
+rms <- c("Rq50", "R100q50")
+
+df_plot <- NULL
+df_plot <- dfSPC95XX10 %>% select(all_of(rms)) %>% filter(complete.cases(.))
+
+#Density of x1, x2 ie rmsd FatCat rmsd (FCrmsd)
+dx1 <- density(df_plot[[rms[1]]], bw = 0.18, na.rm = TRUE)
+dx2 <- density(df_plot[[rms[2]]], bw = 0.18, na.rm = TRUE)
+
+r1 <- data.frame(x = dx1$x,
+                      y = dx1$y,
+                      rmsd = "RMSD")
+
+r2 <- data.frame(x = dx2$x,
+                      y = dx2$y,
+                      rmsd = "R100")
+
+
+r12 <- rbind(r1, r2) %>% 
+  filter((x >= xl[1] & x <= xl[2] & y > yl[1] & y <= yl[2]))
+
+pl <- ggplot(r12, aes(x, y))+
+  geom_line(aes(color = rmsd)) +
+  scale_x_log10() +
+  xlab("") + ylab("")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_bw()+
+  ggtitle("")+
+  xlim(xl[1], xl[2]) + ylim(yl[1], yl[2])
+
+
+cutof1 <- 2.5
+cutof2 <- 5
+bottom1 <- r12 %>%
+  group_by(rmsd) %>%
+  filter(x>=cutof1) %>% 
+  ungroup()
+
+bottom2 <- r12 %>%
+  group_by(rmsd) %>%
+  filter(x>=cutof2) %>% 
+  ungroup()
+
+#max height
+mxh <- max(r12$y)
+
+p.ins <- pl+ geom_area(data = bottom1,
+              aes(x = x,
+                  y = y,
+                  fill = rmsd),
+              alpha = 0.25,
+              position = "identity") +
+ geom_area(data = bottom2,
+              aes(x = x,
+                  y = y,
+                  fill = rmsd),
+                  alpha = 0.99,
+                  position = "identity")+
+
+  geom_vline(xintercept = cutof1, linetype="dashed", color = 'gray') +
+  geom_vline(xintercept = cutof2, linetype="dashed", color = 'gray') +
+  theme(legend.position="none", 
+        axis.title.x=element_blank(),
+        # axis.text.x=element_blank(),
+        # axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+
+```
+## Plot median RMSD distribution for domain group
+```{r}
+library(cowplot)
+plot.with.inset <-
+  ggdraw() +
+  draw_plot(p.main+
+              geom_segment(aes(x = 2.5, y = 0, xend = 5.3, yend = .6), col=I("darkgray"), size=.1)+
+              geom_segment(aes(x = 10, y = 0, xend = 25, yend = 0.25), col=I("darkgray"), size=.1)) +
+  #draw_plot(p.ins, x = .62, y = .3, width = .15, height = 0.3)
+  draw_plot(p.ins, x = 0.57, y = .3, width = .16, height = .35)
+
+ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.pdf"),
+#ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.jpeg"), 
+       plot = plot.with.inset,
+       width = 5, 
+       height = 3,
+       units = "in",
+       dpi = 300)
+
+```
+
+
+## SecStr gain and loss on  dataset
+```{r, fig.width=5.5, fig.height=3.5}
+
+################################## SecStr gain and loss on domain level grouped dataset
+secdf <- df02 %>% select(all_of(c("cth_secstr_count" , "af2_secstr_count"))) %>% 
+  
+  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count)>0, "Loss", "Gain")) %>%
+  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count) == 0, "NoChange", secstr3class))  %>%
+  
+  
+  mutate(secstr3class2 = if_else((cth_secstr_count - af2_secstr_count)>2, "Loss", "Gain")) %>%
+  mutate(secstr3class2 = if_else(((cth_secstr_count - af2_secstr_count) <= 2 & (cth_secstr_count - af2_secstr_count) >= -2), "NoChange", secstr3class2))  %>%
+  
+  mutate(secstr3class4 = if_else((cth_secstr_count - af2_secstr_count)>4, "Loss", "Gain")) %>%
+  mutate(secstr3class4 = if_else(((cth_secstr_count - af2_secstr_count) <= 4 & (cth_secstr_count - af2_secstr_count) >= -4), "NoChange", secstr3class4))  %>%
+  
+  
+  mutate(secstr3class8 = if_else((cth_secstr_count - af2_secstr_count)>8, "Loss", "Gain")) %>%
+  mutate(secstr3class8 = if_else(((cth_secstr_count - af2_secstr_count) <= 8 & (cth_secstr_count - af2_secstr_count) >= -8), "NoChange", secstr3class8)) 
+
+s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
+s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
+s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
+s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
+
+secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
+secFreq <- table(secdf2) %>% data.frame()
+
+ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
+  scale_fill_manual(values=c("orange2",
+                             "chocolate3",
+                             "darkgreen"))  +   theme_bw()
+secdf <- secdf2 <- NULL
+message("Ungrouped secondary str gain loss data")
+print(secFreq)
+
+```
+
+
+
+## SecStr gain and loss on domain level grouped dataset
+```{r, fig.width=5.5, fig.height=3.5}
+secdf <- dfSPC95XX10 %>% select(all_of(c("cthSSEq50" , "af2SSEq50"))) %>% 
+  
+  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50)>0, "Loss", "Gain")) %>%
+  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50) == 0, "NoChange", secstr3class))  %>%
+  
+  
+  mutate(secstr3class2 = if_else((cthSSEq50 - af2SSEq50)>2, "Loss", "Gain")) %>%
+  mutate(secstr3class2 = if_else(((cthSSEq50 - af2SSEq50) <= 2 & (cthSSEq50 - af2SSEq50) >= -2), "NoChange", secstr3class2))  %>%
+  
+  mutate(secstr3class4 = if_else((cthSSEq50 - af2SSEq50)>4, "Loss", "Gain")) %>%
+  mutate(secstr3class4 = if_else(((cthSSEq50 - af2SSEq50) <= 4 & (cthSSEq50 - af2SSEq50) >= -4), "NoChange", secstr3class4))  %>%
+  
+  
+  mutate(secstr3class8 = if_else((cthSSEq50 - af2SSEq50)>8, "Loss", "Gain")) %>%
+  mutate(secstr3class8 = if_else(((cthSSEq50 - af2SSEq50) <= 8 & (cthSSEq50 - af2SSEq50) >= -8), "NoChange", secstr3class8)) 
+  
+s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
+s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
+s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
+s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
+
+secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
+secFreq <- table(secdf2) %>% data.frame()
+message("Grouped secondary str gain loss data")
+secFreq %>% group_by(Class) %>% mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="0")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22652")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22654")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22658")
+
+
+Plot_sec_str_gainLoss <- ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
+  scale_fill_manual(values=c("orange2",
+                             "chocolate3",
+                             "darkgreen")) +   theme_bw()
+
+
+Plot_sec_str_gainLoss
+
+
+printfile <- FALSE
+if(print2file){
+  ggsave(filename = file.path(data, "Figure_Sec_str_GainLoss.pdf"),
+#ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.jpeg"),
+       plot = Plot_sec_str_gainLoss,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+}
+
+```
+
+```{r}
+
+dua <- NULL; dua <- df02
+df_plot <- NULL; df_plot <- list()
+
+df_plot$Class <- dua$Class
+df_plot$Dom_Len <- dua$Dom_Len
+df_plot$cthHelixF <- dua$cth_Helix_count/dua$Dom_Len # fraction
+df_plot$cthSheetF <- dua$cth_Sheet_count/dua$Dom_Len
+df_plot$cthSecF <- (dua$cth_Helix_count + dua$cth_Sheet_count)/dua$Dom_Len
+df_plot <- as.data.frame(df_plot)
+df_plot <- df_plot[complete.cases(df_plot),]
+
+ggplot(df_plot, aes(cthHelixF)) + geom_density()
+df_plot$cut_cthHelix <- cut(as.numeric(df_plot$cthHelixF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+ggplot(df_plot, aes(cthSheetF)) + geom_density()
+df_plot$cut_cthSheet <- cut(as.numeric(df_plot$cthSheetF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+ggplot(df_plot, aes(cthSecF)) + geom_density()
+df_plot$cut_Sec <- cut(as.numeric(df_plot$cthSecF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+head(df_plot)
+```
+
+```{r fig.width=5}
+
+#Helix
+
+tmpdfH <- df_plot %>% select(c("Class", "cut_cthHelix")) %>% table() %>% as.data.frame()
+ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity")
+p.H <- ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity", position="fill"); p.H
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+tmpdfS <- df_plot %>% select(c("Class", "cut_cthSheet")) %>% table() %>% as.data.frame()
+ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity")
+p.S <- ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity", position="fill"); p.S
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+tmpdfSec <- df_plot %>% select(c("Class", "cut_Sec")) %>% table() %>% as.data.frame()
+ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity")
+p.HS <- ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity", position="fill"); p.HS
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+
+
+
+print2file=FALSE
+if(print2file){
+
+ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_helix.pdf"),
+
+       plot = p.H,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+  
+  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_sheet.pdf"),
+
+       plot = p.S,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_HS.pdf"),
+
+       plot = p.HS,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+}
+```
+
+
+```{r}
+plotdf2 <- list()
+plotdf2$Dom <- dua$Dom
+
+plotdf2$RMSD <- dua$RMSD
+
+plotdf2$BE <- dua$BE80_ratio
+plotdf2$AV <- dua$Area /dua$Vol
+
+plotdf2 <- as.data.frame(plotdf2)
+
+plotdf2$Cut_RMSD <- cut(plotdf2$RMSD, breaks = c(0, 2.5, 5, 10, 100))
+
+
+plotdf2$Cut_BE <- cut(plotdf2$BE, breaks = c(0, 0.5, 1, Inf))
+plotdf2$Cut_AV <- cut(plotdf2$AV, breaks = c(0, 0.35, 0.45, Inf))
+
+plotdf3 <- plotdf2[c("Cut_RMSD","Cut_BE" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(aes(fill=Cut_BE), stat="identity")
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(aes(fill=Cut_BE), stat="identity", position="fill") +
+  scale_fill_manual(values=c("red",
+                             "lightblue",
+                             "darkblue"))
+
+
+
+plotdf3 <- plotdf2[c("Cut_RMSD","Cut_AV")] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(aes(fill=Cut_AV), stat="identity")
+ggplot(plotdf3, aes(x=Cut_RMSD, y=Freq)) +geom_bar(aes(fill=Cut_AV), stat="identity", position="fill")+
+  scale_fill_manual(values=c("darkblue",
+                             "lightblue",
+                             "red"))
+
+
+```
+
+
+
+```{r}
+plotdf <- list()
+plotdf$ProtSpecificDomID <- dfSPC95XX10$ProtSpecificDomID
+
+plotdf$Rq50 <- dfSPC95XX10$Rq50
+plotdf$FCRq50 <- dfSPC95XX10$FCRq50
+plotdf$FCTwistq50 <- dfSPC95XX10$FCTwistq50
+
+plotdf$BEq50 <- dfSPC95XX10$BEq50
+plotdf$AVq50 <- dfSPC95XX10$AVq50
+
+plotdf <- as.data.frame(plotdf)
+
+plotdf$Cut_Rq50 <- cut(plotdf$Rq50, breaks = c(0, 2.5, 5, 10, 100))
+
+
+plotdf$Cut_BEq50 <- cut(plotdf$BEq50, breaks = c(0, 0.5, 1, Inf))
+plotdf$Cut_AVq50 <- cut(plotdf$AVq50, breaks = c(0, 0.35, 0.45, Inf))
+
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+p1 <- ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill") +
+  scale_fill_manual(values=c("red",
+                             "lightblue",
+                             "darkblue")) +   theme_bw()
+p1
+
+
+plotdf2 <- plotdf[c("Cut_Rq50","Cut_AVq50")] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf2, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf2, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity")
+p2 <- ggplot(plotdf2, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity", position="fill")+
+  scale_fill_manual(values=c("darkblue",
+                             "lightblue",
+                             "red")) +   theme_bw()
+p2
+
+
+print2file=TRUE
+if(print2file){
+
+ggsave(filename = file.path(data, "Figure_BEratio.pdf"),
+
+       plot = p1,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+  
+  ggsave(filename = file.path(data, "Figure_AVratio.pdf"),
+
+       plot = p2,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+}
+```
+
+
+
+

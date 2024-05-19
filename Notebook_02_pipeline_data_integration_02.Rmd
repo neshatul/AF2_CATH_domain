@@ -1,0 +1,698 @@
+---
+title: "AF2_trunc"
+author: "Neshatul Haque"
+date: '2023-03-01'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Function to vizualize 1D and 3D alignment of structure
+```{r}
+library(dplyr)
+library(bio3d)
+library(ggplot2)
+library(NGLVieweR)
+library(Biostrings)
+library(ggbreak)
+source("~/repos/workflows/lib_utility.R")
+source("~/repos/workflows/AF2_protein_dynamics/lib_RCSB.R")
+
+
+```
+
+```{r}
+load("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/CATHUNP2.RData")
+DomDir_cth <- "/scratch/g/mtzimmermann/data/Cath_Local_db/v4_3_0"
+DomDir_af2 <- "/scratch/g/mtzimmermann/data/Cath_Local_db/v4_3_0_af2_dom/"
+dd <- "/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/"
+
+#Data from gene ontology, kegg, etc
+gok <- read.csv("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/Uniprot_try2.csv")
+
+lf <- list.files(path = "/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/",
+                 pattern = '*.tab', full.names = TRUE)
+print(lf)
+
+
+# pariwise alignment global-local,  no truncation
+rmsd1 <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTH_AF2_10_ali_local_global_noTrunc.tab", header = T)[-2]
+
+
+# # updated rmsd6 potential non-core domain gesments were removed with appropriate alignment
+rmsd6 <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTH_AF2_09_ali_local_global.tab", header=T)#[c(1,10, 11, 12)]
+
+# some of the colnames are changed to *_t to distinguish it from rmsd1 data
+names(rmsd6) <- c("Dom", "SP_PRIMARY_t", "af2ResBoundary_t", "af2DomLen_t", "PID_t", 
+"PID1_t", "pLDDTq10_", "pLDDTq20_t", "pLDDTq30_t", "RMSD6", "Nter_trunc", "Cter_trunc")
+
+
+# relative surface area, ratio and secondary structure
+relasa <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTHAF2_RelASA04.tab", header = T)
+
+#Volume and surface area of domain
+volsurf <- read.table(file = file.path("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics", "VolSurf.tab"), sep = "\t", header = T)
+
+# CATH putative domains
+cth_putative <- read.table("/scratch/g/mtzimmermann/data/Cath_Local_db/cath-b-newest-all/cath-b-newest-putative")
+
+
+# Seq cluster
+clstrFile <- file.path("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/PDBUNPCTHAF2_SeqClstr.tab")
+clstr <- read.table(clstrFile, header = T)
+
+
+# Sec str content
+message("Secondary structure data")
+#secstr <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/PDBUNPCTH_SecStr_00.tab", header = T)
+secstr <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics/PDBUNPCTH_SecStr_01.tab", header = T)
+
+
+# merge various
+df1 <- merge(CATHUNP2, rmsd1, by = 'Dom'); rm(CATHUNP2)
+df1 <- merge(df1, rmsd6[!names(rmsd6) %in% "SP_PRIMARY"], by = 'Dom')
+#df1 <- merge(df1, ligdf[!names(ligdf) %in% "SP_PRIMARY"], by = 'Dom')
+#df1 <- merge(df1, metaldf[!names(metaldf) %in% "SP_PRIMARY"], by = 'Dom')
+df1 <- merge(df1, relasa[!names(relasa) %in% "SP_PRIMARY"], by = 'Dom')
+df1 <- merge(df1, volsurf[!names(volsurf) %in% "SP_PRIMARY"], by = 'Dom')
+df1 <- merge(df1, clstr, by = 'Dom')
+df1 <- merge(df1, secstr, by = 'Dom')
+
+
+
+
+df1$SP_C95 <- paste0(df1$SP_PRIMARY, "_", df1$C95)
+
+df1 <- df1 %>% distinct(Dom, .keep_all = TRUE)
+
+#remove putative domains
+nPutDom <- df1 %>% filter(Dom %in% cth_putative$V1) %>% dim()
+
+df1$Putative <- FALSE
+df1[df1$Dom %in% cth_putative$V1,]$Putative <- TRUE
+
+
+#RSMD normalization RMSD100 or R100
+#SciViews ln natural logarithm
+#log base function by default calculates natural log ln
+df1$R100 <- with(df1, (RMSD/(1+log(sqrt(Dom_Len/100))))) %>% round(3)
+
+
+
+
+
+
+# Mark subdomains by clustering by size
+#--------------------------------------------
+#'@ separates short and long domain obtained after CD HIT 95 % clustering 
+#'@ differentiates between sub-domain of different length, >=20
+markSubDom <- function(v, sdcol){
+  # sub domain cutoff length. If two sub-domains are 20 amino acid 
+  # different in length then they can be called sub-domain
+  #sdcol <- 20
+  # v <- z2$Dom_Len
+  if(max(v) - min(v) >=sdcol){
+  distance <- dist(v, method = "euclidean") # distance matrix
+  fit <- hclust(distance, method="ward.D2")
+  groups <- cutree(fit, h=sdcol)
+  subDClust <- paste0('0', groups)
+  }else{
+  subDClust <- rep("00", length(v))
+  }
+  return(subDClust)
+}
+
+
+message("Clustering domains to get diversity of sub_domains within length difference of 20")
+df1$SP_C95_XX <- NA
+spc95IDs <- unique(df1$SP_C95)
+
+#monitor progress
+pb <- txtProgressBar(min = 1, max = length(spc95IDs), 
+                     style = 3, width = 50, 
+                     char = "=")
+
+for(i in seq_along(spc95IDs)){
+ # i= 1
+  tempdf <- df1[df1$SP_C95 == spc95IDs[i],]
+  ms <- markSubDom(tempdf$Dom_Len, 20)
+  df1$SP_C95_XX[df1$SP_C95 == spc95IDs[i]] <- paste0(tempdf$SP_C95, "_", ms)
+  setTxtProgressBar(pb, i)
+}
+
+
+message("Assigning average dom length to sub_domain SP_C95_XX")
+
+df1$SP_C95_XX_domL <- NA
+SP_C95_XX_uid <- unique(df1$SP_C95_XX)
+
+for(i in seq_along(SP_C95_XX_uid)){
+  av_dom_len <- df1$Dom_Len[df1$SP_C95_XX == SP_C95_XX_uid[i]] %>% mean() %>% round(., 2)
+  df1$SP_C95_XX_domL[df1$SP_C95_XX == SP_C95_XX_uid[i]] <- av_dom_len
+}
+
+
+
+message("Clustering domains to get diversity of sub_domains within length difference of 10")
+df1$SP_C95_XX10 <- NA
+spc95IDs <- unique(df1$SP_C95)
+
+#monitor progress
+pb <- txtProgressBar(min = 1, max = length(spc95IDs), 
+                     style = 3, width = 50, 
+                     char = "=")
+
+ms <- NULL
+for(i in seq_along(spc95IDs)){
+ # i= 1
+  tempdf <- df1[df1$SP_C95 == spc95IDs[i],]
+  ms <- markSubDom(tempdf$Dom_Len, 10)
+  df1$SP_C95_XX10[df1$SP_C95 == spc95IDs[i]] <- paste0(tempdf$SP_C95, "_", ms)
+  setTxtProgressBar(pb, i)
+}
+
+message("Assigning average dom length to sub_domain SP_C95_XX10")
+df1$SP_C95_XX10_domL <- NA
+SP_C95_XX10_uid <- unique(df1$SP_C95_XX10)
+
+for(i in seq_along(SP_C95_XX10_uid)){
+  av_dom_len <- df1$Dom_Len[df1$SP_C95_XX10 == SP_C95_XX10_uid[i]] %>% mean() %>% round(., 2)
+  df1$SP_C95_XX10_domL[df1$SP_C95_XX10 == SP_C95_XX10_uid[i]] <- av_dom_len
+}
+#--------------------------------------------
+
+
+savedf<- F
+if(savedf){
+  write.table(df1, "/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTHAF2_08_df1.tab")
+} else {df1 <- read.table("/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTHAF2_08_df1.tab", header = T) }
+
+# Remove all the bad alignments, such as gaps in the refseq, AF2
+
+
+################################## Define "the fold" and number of chunk associated with a CATH domain.
+df1$fold <- paste( df1$Class, df1$Arch, df1$Topol, sep = '.')
+df1$nchunks <- stringr::str_count(df1$af2ResBoundary, "-")
+
+################################## distance difference matrix
+LDDThi <- read.table(file.path(data, "data08_LDDThi_10%resi.tab"), header = T)
+df1 <- merge(df1, LDDThi, by = 'Dom')
+
+################################## FATCAT
+fatcat <- read.table(file.path(data, "data09_FATCAT_RMSD.tab"), header = T)
+# fatcat %>% dplyr::filter(FCtwist <= 1) %>% dplyr::filter(FCrmsd >= 2.5) %>% dplyr::filter(FCidendity > 99.99) %>% dim()
+# fatcat %>% dplyr::filter(FCtwist <= 1) %>% dplyr::filter(FCrmsd >= 5) %>% dplyr::filter(FCidendity > 99.99) %>% dim()
+
+
+################################## The merged dataset "The 200K dataset"
+df1 <- merge(df1, fatcat, by = 'Dom')
+
+
+
+################################## Bad alignment removed "The 170K dataset"
+df <- df1 %>% filter(PID1>99)
+
+
+
+savedf<- F
+if(savedf){
+  write.table(df, "/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics//PDBUNPCTHAF2_08_df.tab")
+} 
+
+################################## The fatcat dataset "The 130K dataset"
+df01 <- df1 %>% filter(FCidendity == 100)  #%>% filter(FCtwist < 2)
+
+
+################################## The final dataset with healty alignment, 
+# better resolution and no extended Termini "The 110K dataset"
+df02 <- df1 %>% filter(pLDDTq10 >= 80) %>% 
+  filter(PID1>99) %>% filter(Str_Resol <= 3) %>% 
+  filter(!(Nter_trunc | Cter_trunc))
+```
+
+
+
+## Clustering  all the sequence of the domains:
+Clustering of the sequences (218733 seq) was performed by CD HIT at four different identity percentages. The method starts clustering by considering the longest seq and checking other seq for provided identity percentages.
+```{r}
+head(clstr)
+
+```
+
+
+```{r fig.width=18, fig.height=8}
+opts <- list(geom_boxplot(outlier.size = 0.1, outlier.color = "orange"),
+             scale_y_log10(limits = c(0.1, 30)), theme_bw2(),
+             xlab("Group of Domains (SP_C95_XX10)"),
+             ylab("RMSD to AF2 Prediction"),
+             geom_hline(yintercept = c(2, 5), color = "blue", lwd=1)
+)
+
+df_plot1 <- df01 %>%  filter( !is.na(SP_C95_XX10))
+ggplot(df_plot1, aes(x = reorder(SP_C95_XX10, DistDiff, FUN = median), y = DistDiff)) + opts +
+  ggtitle(paste0("domain distribution within their sub domain cluster for DistDiff - domain cluster - ", length(unique(df01$SP_C95_XX10))))+
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_blank(), axis.ticks.x=element_blank())
+
+
+df_plot1 <- df01 %>%  filter( !is.na(SP_C95_XX10))  %>% filter(FCtwist <2)
+ggplot(df_plot1, aes(x = reorder(SP_C95_XX10, FCrmsd, FUN = median), y = FCrmsd)) + opts +
+  ggtitle(paste0("domain distribution within their sub domain cluster for FCrmsd - domain cluster - ", length(unique(df01$SP_C95_XX10))))+
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_blank(), axis.ticks.x=element_blank())
+rm(df_plot1)
+
+```
+```{r fig.width=18, fig.height=8}
+opts <- list(geom_boxplot(outlier.size = 0.1, outlier.color = "orange"),
+             scale_y_log10(limits = c(0.1, 30)), theme_bw2(),
+             xlab("CATH Topology"),
+             ylab("RMSD to AF2 Prediction"),
+             geom_hline(yintercept = c(2, 5), color = "blue", lwd=1)
+)
+
+df_plot1 <- df01 %>%  filter( !is.na(DistDiff))
+ggplot(df_plot1, aes(x = reorder(fold, DistDiff, median), y = DistDiff)) + opts +
+  ggtitle("748 folds RMSD1")+
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_blank(), axis.ticks.x=element_blank())
+
+
+df_plot1 <- df01 %>%  filter( !is.na(FCrmsd)) %>% filter(FCtwist <2)
+ggplot(df_plot1, aes(x = reorder(fold, FCrmsd, FUN = median), y = FCrmsd)) + opts +
+  ggtitle("748 folds RMSD6")+
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_blank(), axis.ticks.x=element_blank())
+rm(df_plot1)
+
+
+```
+
+
+## Process data by clustered domain
+In "df" each record is a domain before clustering. In dfSPC95XX10 each record is a cluster of domain representing one domain of a protein. Same domain of the protein might have different ID "dfSPC95XX10$ProtSpecificDomID", if the member are at least 10 residue apart. The dataframe dfSPC95XX is the same as dfSPC95XX10 but with rediue difference 20 amino acid.
+## Clustering of domains with extensive features.
+```{r}
+# data under analysis
+dua <- NULL
+dua <- df01
+dim(dua)
+
+# no of unique proteins 
+dua$SP_PRIMARY %>% unique() %>% length()
+
+dua$C100 %>% unique() %>% length()
+
+# list of C95 unique member
+lC95 <- dua$C95 %>% unique()
+dua$C95 %>% unique() %>% length()
+
+#list of SP_C95 uniwue member
+lSP_C95 <- dua$SP_C95 %>% unique()
+dua$SP_C95 %>% unique() %>% length()
+
+#list of SP_C95_XX uniwue member
+lSP_C95_XX <- dua$SP_C95_XX %>% unique()
+dua$SP_C95_XX %>% unique() %>% length()
+
+#list of SP_C95_XX10 uniwue member
+lSP_C95_XX10 <- dua$SP_C95_XX10 %>% unique()
+dua$SP_C95_XX10 %>% unique() %>% length()
+
+getDomClstr2 <- function(i, clust_name){
+  out <- list()
+  Uni <- dua$SP_PRIMARY[dua[[clust_name]]==i]
+  if(length(Uni!=0)){
+    out$ProtSpecificDomID <- i
+    
+    dfselect <- dua[dua[[clust_name]]==i,]
+    out$nClass <- length(unique(dfselect$Class))
+    out$nfold <- length(unique(dfselect$fold))
+    out$nUni <- length(unique(Uni))
+    out$nDom <- length(dfselect$Dom)
+    
+    #Dom length
+    DomLenlist <- dfselect$Dom_Len
+    out$DomLenmin <- min(DomLenlist)
+    out$DomLenmean <- mean(DomLenlist) %>% round(3)
+    out$DomLenq50 <- median(DomLenlist)
+    out$DomLenmax <- max(DomLenlist)
+    
+    #RMSD
+    rmdlist <- dfselect$RMSD
+    out$Rmin <- min(rmdlist)
+    out$Rmean <- mean(rmdlist) %>% round(3)
+    out$Rq50 <- median(rmdlist)
+    out$Rmax <- max(rmdlist)
+    
+    #FCRMSD
+    rmdlist <- dfselect$FCrmsd
+    out$FCRmin <- min(rmdlist)
+    out$FCRmean <- mean(rmdlist) %>% round(3)
+    out$FCRq50 <- median(rmdlist)
+    out$FCRmax <- max(rmdlist)
+    
+    #FCtwist
+    rmdlist <- dfselect$FCtwist
+    out$FCTwistmin <- min(rmdlist)
+    out$FCTwistmean <- mean(rmdlist) %>% round(3)
+    out$FCTwistq50 <- median(rmdlist)
+    out$FCTwistmax <- max(rmdlist)
+    
+    #cth helix
+    helixlist <- dfselect$cth_Helix_count
+    out$cthHlxmin <- min(helixlist)
+    out$cthHlxmean <- mean(helixlist) %>% round(3)
+    out$cthHlxq50 <- median(helixlist)
+    out$cthHlxmax <- max(helixlist)
+
+    #cth sheet
+    sheetlist <- dfselect$cth_Sheet_count
+    out$cthShtmin <- min(sheetlist)
+    out$cthShtmean <- mean(sheetlist) %>% round(3)
+    out$cthShtq50 <- median(sheetlist)
+    out$cthShtmax <- max(sheetlist)
+
+    #cth loop
+    looplist <- dfselect$cth_loop_count
+    out$cthLpmin <- min(looplist)
+    out$cthLpmean <- mean(looplist) %>% round(3)
+    out$cthLpq50 <- median(looplist)
+    out$cthLpmax <- max(looplist)
+    out$cthLpsd <- sd(looplist) %>% round(3)
+    
+    #Area by Vol ratio
+    AVlist <- with(dfselect, Area/Vol) %>% round(3)
+    out$AVmin <- min(AVlist)
+    out$AVmean <- mean(AVlist) %>% round(3)
+    out$AVq50 <- median(AVlist)
+    out$AVmax <- max(AVlist)
+
+    #secondary structure diference
+    secstrlist <- with(dfselect, cth_secstr_count-af2_secstr_count)
+    out$nSecStr_diffmin <- min(secstrlist)
+    out$nSecStr_diffmean <- mean(secstrlist) %>% round(3)
+    out$nSecStr_diffq50 <- median(secstrlist)
+    out$nSecStr_diffmax <- max(secstrlist)
+
+    
+    #loop diference
+    looplist <- with(dfselect, cth_loop_count - af2_loop_count)
+    out$nLoop_diffmin <- min(looplist)
+    out$nloop_diffmean <- mean(looplist) %>% round(3)
+    out$nLoop_diffq50 <- median(looplist)
+    out$nLoop_diffmax <- max(looplist)
+
+    #BE ratio
+    BElist <- dfselect$BE80_ratio %>% round(3)
+    out$BEmin <- min(BElist)
+    out$BEmean <- mean(BElist) %>% round(3)
+    out$BEq50 <- median(BElist)
+    out$BEmax <- max(BElist)
+
+  }
+  return(as.data.frame(out))
+}
+
+
+# Grouped based on protein specific subdomains
+SP_C95_XX_list <- dua$SP_C95_XX %>% unique()
+dfSPC95XX <- do.call(rbind, pbmcapply::pbmclapply(SP_C95_XX_list, function(x){
+  getDomClstr2(x, "SP_C95_XX")
+}, mc.cores = 48))
+
+SP_C95_XX10_list <- dua$SP_C95_XX10 %>% unique()
+dfSPC95XX10 <- do.call(rbind, pbmcapply::pbmclapply(SP_C95_XX10_list, function(x){
+  getDomClstr2(x, "SP_C95_XX10")
+}, mc.cores = 48))
+
+uniq_fold <- dua$fold %>% unique()
+dffold <- do.call(rbind, pbmcapply::pbmclapply(uniq_fold, function(x){
+  getDomClstr2(x, "fold")
+}, mc.cores = 48))
+
+
+SP_C95_list <- dua$SP_C95 %>% unique()
+dfSPC95 <- do.call(rbind, pbmcapply::pbmclapply(SP_C95_list, function(x){
+  getDomClstr2(x, "SP_C95")
+}, mc.cores = 48))
+dfSPC95$SP_C95 <- paste0(dfSPC95$UnipId, "_", dfSPC95$C95ID)
+dua <- NULL
+
+```
+
+
+
+
+
+
+
+
+
+
+ 
+```{r}
+
+plotdf <- list()
+plotdf$ProtSpecificDomID <- dfSPC95XX$ProtSpecificDomID
+
+plotdf$Rq50 <- dfSPC95XX$Rq50
+plotdf$FCRq50 <- dfSPC95XX$FCRq50
+
+plotdf$BEq50 <- dfSPC95XX$BEq50
+plotdf$AVq50 <- dfSPC95XX$AVq50
+plotdf$cthHlxq50 <- dfSPC95XX$cthHlxq50 / dfSPC95XX$DomLenmean
+plotdf$cthShtq50 <- dfSPC95XX$cthShtq50 / dfSPC95XX$DomLenmean
+plotdf$cthLpq50 <- dfSPC95XX$cthLpq50 / dfSPC95XX$DomLenmean
+plotdf <- as.data.frame(plotdf)
+
+plotdf$Cut_Rq50 <- cut(plotdf$Rq50, breaks = c(0, 2.5, 5, 10, 100))
+plotdf$Cut_FCRq50 <- cut(plotdf$FCRq50, breaks = c(0, 2.5, 5, 10, 100))
+
+
+plotdf$Cut_BEq50 <- cut(plotdf$BEq50, breaks = c(0, 0.5, 1))
+plotdf$Cut_AVq50 <- cut(plotdf$AVq50, breaks = c(0, 0.35, 0.45))
+
+plotdf$Cut_cthHlxq50 <- cut(plotdf$cthHlxq50, breaks = c(0, 0.20, 0.4, 0.6, 0.8, 1 ))
+plotdf$Cut_cthShtq50 <- cut(plotdf$cthShtq50, breaks = c(0, 0.20, 0.4, 0.6, 0.8, 1 ))
+plotdf$Cut_cthLpq50 <- cut(plotdf$cthLpq50, breaks = c(0, 0.20, 0.4, 0.6, 0.8, 1 ))
+
+
+```
+
+```{r fig.width=4}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill")
+
+```
+```{r}
+plotdf1 <- plotdf[c("Cut_FCRq50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_FCRq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_FCRq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_FCRq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill")
+
+```
+
+
+```{r fig.width=4}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_AVq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity", position="fill")
+
+```
+
+```{r fig.width=4}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthHlxq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthHlxq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthHlxq50), stat="identity", position="fill")
+
+```
+```{r}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthShtq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthShtq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthShtq50), stat="identity", position="fill")
+
+```
+
+```{r}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthLpq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthLpq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthLpq50), stat="identity", position="fill")
+
+```
+
+```{r}
+
+plotdf <- list()
+plotdf$ProtSpecificDomID <- dfSPC95XX10$ProtSpecificDomID
+plotdf$Class <- dfSPC95XX10$Class1
+plotdf$Rq50 <- dfSPC95XX10$Rq50
+plotdf$R6q50 <- dfSPC95XX10$R6q50
+plotdf$R100q50 <- dfSPC95XX10$R100q50
+plotdf$BEq50 <- dfSPC95XX10$BEq50
+plotdf$AVq50 <- dfSPC95XX10$AVq50
+plotdf$Ligq50 <- dfSPC95XX10$Ligq50
+plotdf$Metq50 <- dfSPC95XX10$Metq50
+plotdf$DomLenq50 <- dfSPC95XX10$DomLenq50
+plotdf$cthHlxq50 <- dfSPC95XX10$cthHlxq50 / dfSPC95XX10$DomLenmean
+plotdf$cthShtq50 <- dfSPC95XX10$cthShtq50 / dfSPC95XX10$DomLenmean
+plotdf$cthLpq50 <- dfSPC95XX10$cthLpq50 / dfSPC95XX10$DomLenmean
+plotdf <- as.data.frame(plotdf)
+
+plotdf$Cut_Rq50 <- cut(plotdf$Rq50, breaks = c(0, 2.5, 5, 10, 100))
+plotdf$Cut_R6q50 <- cut(plotdf$R6q50, breaks = c(0, 2.5, 5, 10, 100))
+plotdf$Cut_R100q50 <- cut(plotdf$R100q50, breaks = c(0, 2.5, 5, 10, 100))
+
+# plotdf$Cut_BEq50 <- cut(plotdf$BEq50, breaks = c(0, 0.5, 1, 1.5, 2, 2.5, 3, 50))
+plotdf$Cut_BEq50 <- cut(plotdf$BEq50, breaks = c(0, 0.5, 1, 1.5, 50))
+plotdf$Cut_AVq50 <- cut(plotdf$AVq50, breaks = c(0, 0.25, 0.35, 0.45, 1))
+plotdf$Cut_Ligq50 <- cut(plotdf$Ligq50, breaks = c(0, 10, 20, 50, 100, 150, 200, 1000 ))
+plotdf$Cut_Metq50 <- cut(plotdf$Metq50, breaks = c(0, 5, 10, 15, 50 ))
+plotdf$Cut_DomLenq50 <- cut(plotdf$DomLenq50, breaks = c(0, 25, 50, 100, 250, 500, 1250))
+plotdf$Cut_cthHlxq50 <- cut(plotdf$cthHlxq50, breaks = c(0, 0.25, 0.50, 0.75, 1 ))
+plotdf$Cut_cthShtq50 <- cut(plotdf$cthShtq50, breaks = c(0, 0.25, 0.50, 0.75, 1  ))
+plotdf$Cut_cthLpq50 <- cut(plotdf$cthLpq50, breaks = c(0, 0.25, 0.50, 0.75, 1  ))
+
+```
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill")
+
+```
+```{r}
+plotdf1 <- plotdf[c("Cut_R6q50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_R6q50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_R6q50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_R6q50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill")
+
+```
+```{r}
+plotdf1 <- plotdf[c("Cut_R100q50","Cut_BEq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_R100q50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_R100q50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_R100q50, y=Freq)) +geom_bar(aes(fill=Cut_BEq50), stat="identity", position="fill")
+
+```
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_AVq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_AVq50), stat="identity", position="fill")
+
+```
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthHlxq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthHlxq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthHlxq50), stat="identity", position="fill")
+
+```
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthShtq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthShtq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthShtq50), stat="identity", position="fill")
+
+```
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_cthLpq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthLpq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_cthLpq50), stat="identity", position="fill")
+
+```
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_Metq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_Metq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_Metq50), stat="identity", position="fill")
+
+
+
+``` 
+
+```{r fig.width=6}
+plotdf1 <- plotdf[c("Cut_Rq50","Cut_DomLenq50" )] %>% .[complete.cases(.),] %>% table() %>% data.frame()
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_DomLenq50), stat="identity")
+ggplot(plotdf1, aes(x=Cut_Rq50, y=Freq)) +geom_bar(aes(fill=Cut_DomLenq50), stat="identity", position="fill")
+
+
+
+```
+
+## no of contact residue with the ligand
+## mean of the group
+```{r}
+#ggplot(dfSPC95XX10, aes(Ligsd)) + geom_density()
+dfSPC95XX10$cutLigmax <- cut(as.numeric(dfSPC95XX10$Ligsd), breaks = c(0, 2, 4, 6, 8, 10, 15, 100 ))
+ggplot(dfSPC95XX10, aes(rmaxcut))  +geom_bar(stat="identity")
+ggplot(dfSPC95XX10, aes(rmaxcut)) +geom_bar(aes(fill=cutLigmax))
+ggplot(dfSPC95XX10, aes(rmaxcut)) +geom_bar(aes(fill=cutLigmax), position="fill")
+
+
+ggplot(dfSPC95XX10, aes(rmaxcut)) +geom_bar(aes(fill=cutLigmax))+
+scale_y_cut(breaks=c(500), which=c(1, 2), scales=c(1, 2))
+
+```
+## Understanding diversity of domains at various level
+
+```{r}
+plotdf <- list()
+plotdf$Class <- df$Class
+plotdf$Dom_Len <- df$Dom_Len
+plotdf$cthHelixF <- df$cth_Helix_count/df$Dom_Len # fraction
+plotdf$cthSheetF <- df$cth_Sheet_count/df$Dom_Len
+plotdf$cthSecF <- (df$cth_Helix_count + df$cth_Sheet_count)/df$Dom_Len
+plotdf <- as.data.frame(plotdf)
+plotdf <- plotdf[complete.cases(plotdf),]
+
+ggplot(plotdf, aes(cthHelixF)) + geom_density()
+plotdf$cut_cthHelix <- cut(as.numeric(plotdf$cthHelixF), breaks = c(-0.001, 0.25, 0.50, 0.75, 1.01))
+
+ggplot(plotdf, aes(cthSheetF)) + geom_density()
+plotdf$cut_cthSheet <- cut(as.numeric(plotdf$cthSheetF), breaks = c(-0.001, 0.25, 0.50, 0.75, 1.01))
+
+ggplot(plotdf, aes(cthSecF)) + geom_density()
+plotdf$cut_Sec <- cut(as.numeric(plotdf$cthSecF), breaks = c(-0.001, 0.25, 0.50, 0.75, 1.01))
+
+#    Class Dom_Len  cthHelixF  cthSheetF   cthSecF cut_cthHelix cut_cthSheet    cut_Sec
+
+```
+
+```{r fig.width=3.5}
+
+#Helix
+#tmpdfH <- plotdf  %>% filter(Class=="1") %>%  .[names(.) %in% c("Class", "cut_cthHelix")] %>% table() %>% as.data.frame()
+tmpdfH <- plotdf  %>%  .[names(.) %in% c("Class", "cut_cthHelix")] %>% table() %>% as.data.frame()
+
+ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity")
+ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity", position="fill")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq))
+
+
+tmpdfS <- plotdf  %>%  .[names(.) %in% c("Class", "cut_cthSheet")] %>% table() %>% as.data.frame()
+
+ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity")
+ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity", position="fill")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq))
+
+tmpdfSec <- plotdf  %>%  .[names(.) %in% c("Class", "cut_Sec")] %>% table() %>% as.data.frame()
+
+ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity")
+ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity", position="fill")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq))
+
+```
+

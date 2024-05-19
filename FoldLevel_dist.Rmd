@@ -1,0 +1,295 @@
+---
+title: "AF2 dynamics project"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = '/scratch/g/mtzimmermann/NH/AF2_manuscript_codes_data/data', echo = TRUE, rows.print=6)
+knitr::opts_knit$set( root.dir = '/scratch/g/mtzimmermann/NH/AF2_manuscript_codes_data/data')
+knitr::opts_chunk$set(echo = TRUE)
+# source('~/repos/systems_biology/setup_RITAN.R')
+# source('~/repos/systems_biology/KRAS/plotGseaTable_MZ.R')
+# source('~/repos/systems_biology/lib_biomaRt_wrappers.R')
+# source('~/repos/systems_biology/lib_meta_genelists.R')
+source("~/repos/workflows/lib_utility.R")
+require(ggrepel)
+require(patchwork)
+require(stringr)
+require(dplyr)
+rmsd.cut <- c(2.5, 5)
+```
+
+## Read in data <-- I've not gotten this to work - run it interactively, then continue here
+<!--```{r dataload, child='~/repos/reviews/2023_AF2_conformational_survey/AF2_protein_dynamics/AF2conform_data_loader.Rmd', eval=TRUE}
+``` -->
+```{r}
+
+d <- df02
+
+```
+
+## Summarize
+```{r}
+#d$fold <- paste( d$Class, d$Arch, d$Topol, sep = '.')
+n.fold <- length(unique(d$fold))
+d$nchunks <- stringr::str_count(d$af2ResBoundary, "-")
+
+message(str_interp( 'Total topologies represented: ${length(unique(d$fold))}' ))
+message(str_interp( 'Total proteins represented  : ${length(unique(d$SP_PRIMARY))}' ))
+
+message("\n\nNChunks is from UniProt, while nAFchunks is from aligning the AF2 model to the refernece = how much of a structure match it is too...:\n")
+d$nchunks <- stringr::str_count(d$Boundary, ",")+1
+table(d$nchunks)
+
+d$nAFchunks <- stringr::str_count(d$af2ResBoundary, ",")+1
+# table(d$nAFchunks)
+table(d$nAFchunks > 1)
+
+table(d$nAFchunks, d$nchunks)
+
+message("\nresolution:")
+summary(d$Str_Resol)
+table(d$Str_Resol == 999)
+
+message("Ligands:")
+table(d$Lig_Num, useNA = 'a')
+100 * sum(d$Lig_Num>0) / length(d$Lig_Num)
+
+message("Seq_Diff:")
+table(d$Seq_Diff, useNA = 'a')
+table(!is.na(d$Seq_Diff))
+100 * sum(!is.na(d$Seq_Diff)) / length(d$Seq_Diff)
+
+message("N.Chunks")
+table(d$nchunks)
+100 * sum(d$nchunks > 1) / dim(d)[1]
+
+```
+
+```{r}
+ggplot(d) +
+  geom_bar(aes(x = forcats::fct_infreq(fold))) +
+  theme(axis.text.x = element_blank()) + scale_y_log10() +
+  xlab("CATH Topology") + ylab("Domain Count")
+
+```
+
+```{r, fig.width=10}
+
+## By fold variability
+dv <- d %>% dplyr::filter( !is.na(RMSD) ) %>% group_by(fold) %>%
+  summarise(rmsd_median  = median(RMSD ),
+            rmsd_mad     = mad(   RMSD , constant = 1),
+            FCrmsd_median = median(FCrmsd), # <- ???
+            FCrmsd_mad    = mad(   FCrmsd, constant = 1),
+            rmsd100_median = median(R100),
+            rmsd100_mad  = mad(   R100 , constant = 1),
+            
+            
+            dd_median = median(DistDiff),
+            dd_mad  = mad(   DistDiff , constant = 1),
+            
+            
+            avg_Lig_Num  = mean(Lig_Num),
+            avg_nchunks  = mean(nchunks),
+            avg_nAFchunks= mean(nAFchunks),
+            mad_Vol      = mad(Vol, constant = 1),
+            mad_Area     = mad(Area, constant = 1),
+            n_gt2        = sum( RMSD >= 2 ),
+            n_gt5        = sum( RMSD >= 5 ),
+            n            = n()
+            )
+
+table(dv$rmsd_mad == 0)
+# range(dv$rmsd_mad[ dv$rmsd_mad > 0])
+# dv$rmsd_mad[ dv$rmsd_mad == 0 ] <- 0.004
+
+
+## Plot options
+# ggplot(df,aes(x,y,fill=grp))+geom_boxplot()+geom_boxplot(aes(color=grp))
+opts <- list(
+  geom_boxplot(outlier.size = 0.1, outlier.color = "orange", color = "black"),
+  geom_boxplot(outlier.size = 0, fill = "purple", color=NA),
+  theme(axis.text.x = element_blank()),
+  scale_y_log10(), theme_bw2n(),
+  xlab("CATH Topology"),
+  ylab("RMSD to AF2 Prediction"),
+  geom_hline(yintercept = rmsd.cut, color = "skyblue", lwd=1), 
+  legend.position = c(12, 1)
+  )
+nox <- list(theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()))
+
+optsy<- list(
+  geom_boxplot(outlier.size = 0.1, outlier.color = "orange", color = "black"),
+  geom_boxplot(outlier.size = 0, fill = "purple", color=NA),
+  theme(axis.text.y = element_blank()),
+  scale_x_log10(), theme_bw2n(),
+  ylab("CATH Topology"),
+  xlab("RMSD to AF2 Prediction"),
+  geom_vline(xintercept = rmsd.cut, color = "skyblue", lwd=1)
+  )
+noy <- list(theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()))
+```
+
+```{r}
+cath <- read.table("http://download.cathdb.info/cath/releases/latest-release/cath-classification-data/cath-names.txt",
+                   sep="\t", header=FALSE, quote = '')
+
+cath <- sapply(cath, function(x){
+  strsplit(x, '    ')
+}) %>% do.call(rbind, .)
+
+colnames(cath) <- c("code","domain","name")
+cath <- as.data.frame(cath)
+
+head(cath)
+dim(cath)
+```
+
+```{r}
+pwd()
+dv$name <- sapply( dv$fold, function(x){ cath$name[cath$code == x] %>% `[`(.,1) })
+
+write.table( dv[ order(dv$n, dv$avg_nchunks, dv$n_gt2, decreasing = TRUE), ],
+#             file = "AF2_protein_dynamics/CATH_domain_summary_table_df02.tsv",
+             file = "CATH_domain_summary_table_df02.tsv",
+             sep = "\t", col.names = TRUE, row.names = FALSE)
+```
+
+```{r}
+# table(d$RMSD >= 3, d$RMSD3 >= 3)
+table(d$RMSD >= rmsd.cut[1], d$FCrmsd >= rmsd.cut[1])
+
+message(str_interp('Fraction domains with FCrmsd >= ${rmsd.cut[1]}'))
+i3 <- (d$FCrmsd >= rmsd.cut[1])
+sum(i3, na.rm = TRUE)
+100 * sum(i3, na.rm = TRUE) / length(i3)
+
+message('Fraction of proteins containing those domains')
+length(unique(d$SP_PRIMARY[i3]))
+length(unique(d$SP_PRIMARY[i3])) * 100 / length(unique(d$SP_PRIMARY))
+
+message('Fraction of folds containing those domains')
+length(unique(d$fold[i3]))
+length(unique(d$fold[i3])) * 100 / length(unique(d$fold))
+```
+
+
+```{r}
+opts_scatter <- list( geom_point(),
+                      scale_color_gradientn(colors = c("darkblue","gray",rep("darkred",3))),
+                      scale_y_log10(), scale_x_log10(), theme_bw2n(),
+                      xlab("Fold Median(RMSD to AF2 Prediction)"),
+                      ylab("Fold MAD(RMSD to AF2 Prediction)"),
+                      geom_vline(xintercept = rmsd.cut, color = "skyblue", lwd=1)
+                      )
+
+opts_scatter2 <- list( geom_point(),
+                      scale_color_gradientn(colors = c("darkblue","gray",rep("darkred",3))),
+                      scale_y_log10(), scale_x_log10(), theme_bw2n(),
+                      xlab(""),
+                      ylab("") )
+
+```
+
+```{r}
+dv2 <- data.frame( fold = d$fold,
+                   rmsd    = d$RMSD,
+                   rmsd_mad    = sapply(d$fold, function(x){ dv$rmsd_mad[   dv$fold == x] }),
+                   FCrmsd   = d$FCrmsd,
+                   FCrmsd_mad   = sapply(d$fold, function(x){ dv$FCrmsd_mad[  dv$fold == x] }),
+                   rmsd100 = d$R100,
+                   rmsd100_mad = sapply(d$fold, function(x){ dv$rmsd100_mad[dv$fold == x] })
+                   ) %>% 
+  group_by(fold)
+str(dv2, max.level = 2)
+```
+
+
+```{r merge, fig.width=8, fig.height=8}
+p.0  <- ggplot() + theme_void()
+p.sc <- ggplot(dv, aes(x=rmsd_median , y=rmsd_mad , color = n_gt2/n    )) + opts_scatter
+p.rm <- ggplot(d , aes(y = reorder(fold, RMSD, FUN = median), x = RMSD)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, Median order"))
+p.ra <- ggplot(d , aes(x = reorder(fold, RMSD, FUN = mad   ), y = RMSD)) + optsy  + nox + ylab(str_interp("${n.fold} CATH Topologies, MAD order"))
+
+p.ray<- ggplot(d , aes(y = reorder(fold, RMSD, FUN = mad   ), x = RMSD)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, MAD order"))
+p.ra2<- ggplot(dv2, aes(y = rmsd_mad, x = rmsd, color = rmsd)) +
+  geom_point(size=.1) +
+  scale_x_log10() + scale_y_log10() + theme_bw2n() + xlab("RMSD to AF2 Prediction") +
+  scale_color_gradientn(colours = c("black","purple","orange","darkred","darkred"), trans = "log") +
+  geom_vline(xintercept = rmsd.cut, color = "skyblue", lwd=1) +
+  ylab("Fold MAD(RMSD to AF2 Prediction)") + noy
+  
+# p.ray / p.rm / p.sc
+# (p.rm | p.0) / (p.sc | p.ra)
+(p.rm | p.ray) / (p.sc | p.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+
+```
+
+```{r merge6, fig.width=8, fig.height=8}
+p6.sc <- ggplot(dv, aes(x=FCrmsd_median , y=FCrmsd_mad , color = n_gt2/n    )) + opts_scatter
+p6.rm <- ggplot(d , aes(y = reorder(fold, FCrmsd, FUN = median), x = FCrmsd)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, Median order"))
+p6.ray<- ggplot(d , aes(y = reorder(fold, FCrmsd, FUN = mad   ), x = FCrmsd)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, MAD order"))
+p6.ra2<- ggplot(dv2, aes(y = FCrmsd_mad, x = FCrmsd, color = FCrmsd)) +
+  geom_point(size=.1) +
+  scale_x_log10() + scale_y_log10() + theme_bw2n() + xlab("FCrmsd to AF2 Prediction") +
+  scale_color_gradientn(colours = c("black","purple","orange","darkred","darkred"), trans = "log") +
+  geom_vline(xintercept = rmsd.cut, color = "skyblue", lwd=1) +
+  ylab("Fold MAD(FCrmsd to AF2 Prediction)") + noy
+  
+(p6.rm | p6.ray) / (p6.sc | p6.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+
+```
+
+```{r merge100, fig.width=8, fig.height=8}
+p100.sc <- ggplot(dv, aes(x=rmsd100_median , y=rmsd100_mad , color = n_gt2/n )) + opts_scatter
+p100.rm <- ggplot(d , aes(y = reorder(fold, R100, FUN = median), x = R100)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, Median order"))
+p100.ray<- ggplot(d , aes(y = reorder(fold, R100, FUN = mad   ), x = R100)) + optsy + noy + ylab(str_interp("${n.fold} CATH Topologies, MAD order"))
+p100.ra2<- ggplot(dv2, aes(y = rmsd100_mad, x = rmsd100, color = rmsd100)) +
+  geom_point(size=.1) +
+  scale_x_log10() + scale_y_log10() + theme_bw2n() + xlab("RMSD100 to AF2 Prediction") +
+  scale_color_gradientn(colours = c("black","purple","orange","darkred","darkred"), trans = "log") +
+  geom_vline(xintercept = rmsd.cut, color = "skyblue", lwd=1) +
+  ylab("Fold MAD(RMSD100 to AF2 Prediction)") + noy
+  
+(p100.rm | p100.ray) / (p100.sc | p100.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+
+```
+
+
+
+```{r echo=FALSE}
+save2file<- FALSE
+if(save2file){
+
+png("Figure_3_fold_dist_median_mad.jpeg", units = "in", res = 300, width = 5.5,  height = 5.5)
+(   p.rm |    p.ray) / (   p.sc |    p.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+dev.off()
+}
+
+
+save2file<- FALSE
+if(save2file){
+
+pdf("Figure_3_fold_dist_median_mad.pdf", height = 8, width = 8)
+(   p.rm |    p.ray) / (   p.sc |    p.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+dev.off()
+
+}
+
+
+save2file<- FALSE
+if(save2file){
+  pwd()
+cpdf("Figure_3_fold_dist_median_mad.pdf", height = 8, width = 8)
+(   p.rm |    p.ray) / (   p.sc |    p.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+(  p6.rm |   p6.ray) / (  p6.sc |   p6.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+(p100.rm | p100.ray) / (p100.sc | p100.ra2) + plot_layout(guides = "collect") & theme(legend.position = 'right')
+dev.off()
+
+}
+```
+

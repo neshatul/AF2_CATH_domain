@@ -1,0 +1,494 @@
+---
+title: "AF2pdbComp"
+author: "Neshatul Haque"
+date: '2022-09-27'
+output:
+  pdf_document: default
+  html_document: default
+fig_width: 6 
+fig_height: 3 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Large scale comparision of PDB structures and AF2 structures:
+AF2 has been very promising on predicting protein 3D structure from their sequence. 
+We often see similar structures are obtained by experiments. However, in some 
+specific experimental condition other off-state structures get populated and 
+subsequently are solved as 3D model. In this project we are trying to study the 
+state of structure the predicted algorithm generate and resemblance it acquires 
+with known 3D models. And what might be the cause of any preference in the 
+predicted structure.  
+
+# Variables to be provided by the users
+```{r USER_DEFINED_PATHS}
+#data and code dir
+dcd <- "/scratch/g/mtzimmermann/NH/AF2_manuscript_codes_data" #CHANGE HERE
+data <- file.path(dcd, "data") # The path you want to use for saving input, output, and databases
+
+
+PYMOL_PATH <- "/hpc/apps/miniconda3/4.9.2/envs/pymol-2.5.0/bin"
+STRIDE_PATH <- "~/Applications/STRIDE/stride"
+PDB_to_XYZR <- "~/Applications/3v/vossvolvox/xyzr/pdb_to_xyzr"
+CDHIT_PATH <- "/hpc/apps/cd-hit/4.8.1"
+FATCAT_EXE <- "/home/nehaque/Applications/fatcat/FATCAT-dist/FATCATMain/FATCAT"
+
+
+```
+
+```{r dependencies_and_PATHS, include=FALSE}
+source("utils.R")
+# provide the number of cores available
+NUM_CORES <- 48
+
+# cath_str_db_path <- "/scratch/g/mtzimmermann/data/Cath_Local_db/v4_3_0"
+# cth_af2_str_db_path <- "/scratch/g/mtzimmermann/data/Cath_Local_db/v4_3_0_af2_dom"
+# af2_str_db_path <- "/scratch/g/mtzimmermann/data/AF2_local_db/af2_general"
+
+
+#ACTIVATE THE FOLLOWING 4 LINES AND DELETE THIS ONE AFTER TESTING THE CODE
+CATH_DB_PATH <- "/hpc/refdata/cathdb/v4_3_0"  
+#CATH_DB_PATH <- file.path(data, "CATHdb/v4_3_0")
+# if(!dir.exists(CATH_DB_PATH)){
+#   dir.create(CATH_DB_PATH)
+# }
+
+CATH_DB_SEQ_PATH <- file.path(data, "CATHdb/v4_3_0_seq")
+if(!dir.exists(CATH_DB_SEQ_PATH)){
+  dir.create(CATH_DB_SEQ_PATH)
+}
+
+
+CATH_DB_RSA_PATH <- file.path(data, "CATHdb/v4_3_0_rsa")
+if(!dir.exists(CATH_DB_RSA_PATH)){
+  dir.create(CATH_DB_RSA_PATH)
+}
+
+# In RMSD6  calculation we can save CATH domain truncated structures.
+# By default it is off
+CATH_DB_PATH_TRUNC <- file.path(data, "CATHdb/v4_3_0_trunc")
+if(!dir.exists(CATH_DB_PATH_TRUNC)){
+  dir.create(CATH_DB_PATH_TRUNC)
+}
+
+#ACTIVATE THE FOLLOWING 4 LINES AND DELETE THIS ONE AFTER TESTING THE CODE
+AF2_DOM_DB_PATH <- "/scratch/g/mtzimmermann/data/Cath_Local_db/v4_3_0_af2_dom_aliOk" 
+# AF2_DOM_DB_PATH <- file.path(data, "CATHdb/v4_3_0_af2_dom")
+# if(!dir.exists(AF2_DOM_DB_PATH)){
+#   dir.create(AF2_DOM_DB_PATH)
+# }
+
+
+
+AF2_DOM_DB_RSA_PATH <- file.path(data, "CATHdb/v4_3_0_af2_dom_rsa")
+if(!dir.exists(AF2_DOM_DB_RSA_PATH)){
+  dir.create(AF2_DOM_DB_RSA_PATH)
+}
+
+
+AF2_DB_PATH <- file.path(data, "AF2_model")
+if(!dir.exists(AF2_DB_PATH)){
+  dir.create(AF2_DB_PATH)
+}
+
+
+RCSB_DB_PATH <- file.path(data, "RCSBdb")
+if(!dir.exists(RCSB_DB_PATH)){
+  dir.create(RCSB_DB_PATH)
+}
+
+#Relative Solvent Accessible Surface Area files for each corresponding files 
+#in RCSB_DB_PATH. STRIDE provided surface area is converted into relative SA.
+RSA_PATH <- file.path(data, "RCSBdb_RSA")
+if(!file.exists(RSA_PATH)){
+  dir.create(RSA_PATH)
+}
+
+
+#The standard AA surface area data is obtained from naccess
+NACCESS_STD_DATA <- file.path(data, "NACCESS_std_AA_SA_data.txt")
+```
+
+
+
+
+
+
+# The preliminary data obtained by compiling information from CATH db is "CATHUNP2"
+```{r DataLoader}
+CATHUNP2 <- read.table(file.path(data,"CATHUNP2.tab"), header = T)
+str(CATHUNP2)
+```
+
+
+
+
+
+
+## Download databases before starting the analysis
+# Download CATH DB
+```{r Download_CATH_domain_str, echo=FALSE}
+
+dom_list <- unique(CATHUNP2$Dom)
+
+
+pb <- progress::progress_bar$new(format = "(:spin) [:bar] :percent [Elapsed time: :elapsedfull || Estimated time remaining: :eta]",
+                       total = length(dom_list), complete = "=", incomplete = "-", current = ">",
+                       clear = FALSE, width = 100)
+
+downloadCATH <- TRUE
+if(downloadCATH) {
+  responseL <- list()
+  for (i in seq_along(dom_list)){
+    pb$tick()
+    response <- GetCthDomStr(CthLocalDb = file.path(data, "CATHdb") , 
+                         Cath_db_version = "v4_3_0", 
+                         Cath_domain = dom_list[i], 
+                         verbose = T)
+    responseL[i] <- paste0(response, collapse = ";")
+    #print(unp)
+  }
+}
+
+```
+
+
+
+
+
+
+```{r Download_AF_model echo=FALSE}
+# Download the AF2 str
+unp_list <- unique(CATHUNP2$SP_PRIMARY)
+
+
+pb <- progress::progress_bar$new(format = "(:spin) [:bar] :percent [Elapsed time: :elapsedfull || Estimated time remaining: :eta]",
+                       total = length(unp_list), complete = "=", incomplete = "-", current = ">",
+                       clear = FALSE, width = 100)
+downloadAF2 <- TRUE
+if(downloadAF2) {
+  responseL <- list()
+  for (unp in seq_along(unp_list)){
+    pb$tick()
+    response <- GetAF2str(unpid = unp_list[unp], 
+                          af2dbpath=file.path(data, "AF2_model"), 
+                          verbose = T)
+    responseL[unp] <- paste0(response, collapse = ";")
+    Sys.sleep(0.1)
+  }
+}
+
+
+# AF2 strs missing in the data/AF2_model
+af2strs_missing <- list()
+counter <- 0
+for (z in seq_along(unp_list)){
+  fileSize <- file.size(file.path(data, "AF2_model/", 
+                        paste0(unp_list[z], "-F1-model_v3.pdb")))
+  if (fileSize < 200){
+    counter <- counter+1
+    af2strs_missing$SP_PRIMARY[counter] <- unp_list[z]
+    af2strs_missing$AF2ID[counter] <- paste0(unp_list[z], "-F1-model_v3.pdb")
+  }
+}
+af2strs_missing <- as.data.frame(af2strs_missing)
+
+```
+
+
+
+
+
+
+# Download all the protein 3D model from RCSB present in our CATH domain list
+```{r RCSB_download}
+#unique PDB ID list
+PDB_LIST <- lapply(CATHUNP2$Dom, function(p){strsplit(p, split='')[[1]][1:4] %>% paste0(., collapse = '')}) %>% unlist() %>% unique()
+
+pb <- progress::progress_bar$new(format = "(:spin) [:bar] :percent [Elapsed time: :elapsedfull || Estimated time remaining: :eta]",
+                       total = length(PDB_LIST), complete = "=", incomplete = "-", current = ">",
+                       clear = FALSE, width = 100)
+
+downloadRSSB <- TRUE
+if(downloadRSSB){
+    for(pdb_id in PDB_LIST){
+    pb$tick()
+    GetRCSBcoordFile(pdbid=pdb_id, FileType="cif", Compress=T, output_path = RCSB_DB_PATH)
+    Sys.sleep(0.1)
+  }
+}
+
+
+TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
+  inFile <- file.path(RCSB_DB_PATH, paste0(x, ".cif.gz"))
+  outFile <- file.path(RCSB_DB_PATH, paste0(x, ".pdb"))
+  cmnd <- str_interp("${PYMOL_PATH}/pymol -cq ${dcd}/Covert_CIF2PDB.pml ${inFile} ${outFile}")
+  system(cmnd, ignore.stdout = T)
+}, mc.cores=NUM_CORES)
+
+```
+
+
+
+
+
+## Domain extraction from AF2 models and cannonical RMSD calculation
+```{r echo=FALSE}
+
+source("script01_Extract_AF2_dom.R")
+AF2_data <- NULL
+
+
+#GetAF2Cols(which(CATHUNP2$Dom=="1ft1B00"))
+if(!file.exists(file.path(data, "data01_Ext_AF2Dom_RMSD.tab"))){
+  
+  AF2_data <- NULL 
+  #It takes apporximately 40 mins to run. If run in normal loop  it would take ~12 hrs
+  system.time(AF2_data <- pbmcapply::pbmclapply(1: length(CATHUNP2[,1]), function(x){
+    GetAF2Cols(x, outputdir=data, outputfile="data01_Ext_AF2Dom_RMSD.tab")
+  }, mc.cores = NUM_CORES)) # with progress bar
+    
+
+}
+
+``` 
+
+
+
+
+
+## Domain extraction from AF2 models and RMSD6 calculation
+```{r echo=FALSE}
+source("script02_rmsd6.R")
+
+if(!file.exists(file.path(data, "data01_Ext_AF2Dom_RMSD.tab"))){
+  AF2_data <- NULL
+# It takes apporximately 40 mins to run. If run in normal loop  it would take ~12 hrs
+system.time(AF2_data <- pbmcapply::pbmclapply(1: length(CATHUNP2[,1]), function(x){
+  GetAF2Cols(x, outputdir=data, outputfile="data01_Ext_AF2Dom_RMSD.tab")
+  }, mc.cores = NUM_CORES)) # with progress bar
+}
+
+```
+
+
+
+
+# Domain Solven Accecible surface area
+```{r echo=FALSE}
+
+#RUN stride on PDBs
+TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
+  inFile <- file.path(RCSB_DB_PATH, paste0(x, ".pdb"))
+  outFile <- file.path(RSA_PATH, paste0(x, ".rsa"))
+  sse <- stride.WF(file.path(inFile), STRIDE_PATH)
+  write.table(sse, file = outFile, row.names = F, col.names = T, quote = F, sep = "\t")
+}, mc.cores=NUM_CORES)
+
+
+# Compile rsa file for domains
+source(file.path(dcd, "script03_SecStr_ReASA.R"))
+relasadf <- NULL
+RUNTHISBLOCK <- F
+if(RUNTHISBLOCK){
+  system.time(relasadf <- do.call(rbind, pbmcapply::pbmclapply(1: length(CATHUNP2[,1]), GetRelASACols, mc.cores = 48)))
+  #system.time(relasadf <- do.call(rbind, pbmcapply::pbmclapply(1: 2000, GetRelASACols, mc.cores = 48)))
+
+  write.table(relasadf, file = file.path(data, "data03_SecStr_ReASA.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+```
+
+
+
+# volume and surface area of the domain
+```{r}
+#   3v   vossvolvox
+source(file.path(dcd, "script04_Vol_Surf.R"))
+
+
+if(!file.exists(file.path(data, "data04_VolSurf.tab"))){
+  volsurf_df <- NULL
+  system.time(volsurf_df <- do.call(rbind, pbmcapply::pbmclapply(1: length(CATHUNP2[,1]), v3vol, mc.cores = 48))) # with progress bar
+  write.table(volsurf_df, file = file.path(data, "data04_VolSurf_test.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+
+volsurf_df1 <- read.table(file = file.path(data, "data04_VolSurf.tab"), sep = "\t", header = T)
+```
+
+
+# Sequence of domains clustered
+```{r SEQ_CLUST}
+
+if(!file.exists(file.path(data, "data05_SeqClust.tab"))){
+  
+  scource(file.path(dcd, "script05_SeqClust.R"))
+  
+} else{
+  str(read.table(file.path(data, "data05_SeqClust.tab"), header = T))
+}
+
+
+
+```
+
+
+# Secondary structure gain/loss
+```{r}
+source(file.path(dcd, "script06_SecStr_loss.R"))
+
+
+## Secondary str of CATH domain
+#RUN stride on PDBs of CATH domain
+PDB_LIST <- CATHUNP2$Dom[1:100]
+TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
+  inFile <- file.path(CATH_DB_PATH, paste0(x, ".pdb"))
+  outFile <- file.path(CATH_DB_RSA_PATH, paste0(x, ".rsa"))
+  sse <- stride.WF(file.path(inFile), STRIDE_PATH)
+  write.table(sse, file = outFile, row.names = F, col.names = T, quote = F, sep = "\t")
+}, mc.cores=NUM_CORES)
+
+
+## Secondary structure of AF2 domains
+#RUN stride on PDBs of AF2 domains
+PDB_LIST <- CATHUNP2$Dom %>% paste0(., "_af2")
+TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
+  inFile <- file.path(AF2_DOM_DB_PATH, paste0(x, ".pdb"))
+  outFile <- file.path(AF2_DOM_DB_RSA_PATH, paste0(x, ".rsa"))
+  sse <- stride.WF(file.path(inFile), STRIDE_PATH)
+  write.table(sse, file = outFile, row.names = F, col.names = T, quote = F, sep = "\t")
+}, mc.cores=NUM_CORES)
+
+if(!file.exists(file.path(dcd, "data06_SecStr_loss.tab"))){
+  SecStr <- NULL
+  system.time(SecStr <- do.call(rbind, pbmcapply::pbmclapply(1:length(CATHUNP2[,1]), getSecStr, mc.cores = NUM_CORES))) # with progress bar
+  write.table(SecStr, file = file.path(data, "data06_SecStr_loss_test.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+
+```
+## Superposition independent structure comparision LDDT 
+
+```{r}
+
+getLDDT <- function(i){
+  DistRange <- c(0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5)
+  error01 <- FALSE
+  tryCatch(
+    exp = {
+        #i=54
+        dom <- CATHUNP2$Dom[i]
+        
+        # domain pdb File f1 and f2
+        f1 <- file.path(CATH_DB_PATH, paste0(dom, ".pdb") )
+        f2 <- file.path(AF2_DOM_DB_PATH, paste0(dom, "_af2.pdb") )
+        
+        p1 <- read.pdb(f1) %>% bio3d::trim(., "calpha")
+        p2 <- read.pdb(f2) %>% bio3d::trim(., "calpha")
+
+        #vector to matrix
+        m1 <- v2m(p1$xyz)
+        m2 <- v2m(p2$xyz)
+
+        ddmp <- DDM(m1, m2) %>% abs() # (+) and (-) difference mean the same
+        
+        temp <- LDDTca2(ddmp, DistRange) %>% round(.,4)
+        newname <- c("Dom", names(temp))
+        out <- c(dom, temp)
+        names(out) <- newname
+        return(out)
+  }, error = function(e) {
+    #error01 <<- TRUE
+    print(e)
+    out <- c(dom, rep(NA, length(DistRange) * 2))
+    return(out)
+    })
+  
+  # if(error01){
+  #   out <- c(dom, rep(NA, 6))
+  #   return(out)
+  #}
+}
+
+
+if(!file.exists(file.path(data, "data07_LDDT.tab"))){
+  lddt <- NULL
+  system.time(lddt <- do.call(rbind, pbmcapply::pbmclapply((1:length(CATHUNP2[,1])), getLDDT, mc.cores = NUM_CORES))) # with progress bar
+  lddt <- as.data.frame(lddt)
+  write.table(lddt, file = file.path(data, "data07_LDDT.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+
+lddt <- read.table(file.path(data, "data07_LDDT.tab"), header = T)
+lddt <- lddt %>% filter(!is.na(FracAbove_0.5)) # remove rows with NAs
+lddt_frac <- lddt %>% select(grep("Frac|Dom", names(lddt))) # fraction of residues in a mode above a series of cutoff.
+lddt_dd <- lddt %>% select(grep("DD4TH|Dom", names(lddt))) #  DD for respective cutoffs
+
+# lets say if we assume that between two structures all atoms are same except two, 
+# which has DD above 2 Ang. We might take both the str as same as they are almost the same.
+# SO, what is the number of residue which should be considered for structure comparision.
+# With idea that a domain has on an average 200 AA. Then considering 5% of the residues for 
+# testing similarity would be descent.
+FRAC_CutOff <- 0.1 ## it is the fraction of residues present above highest DD
+out_lddthi <- paste0("data08_LDDThi_", FRAC_CutOff*100, "%resi.tab")
+
+# Highest distance difference for FRAC_CutOff
+if(!file.exists(file.path(data, out_lddthi))){
+  LDDThi <- do.call(rbind, pbmcapply::pbmclapply(1:dim(lddt_frac)[1], function(x){
+    tryCatch(
+      exp = {
+        dom <- lddt_frac[["Dom"]][x]
+        #DomLen <- CATHUNP2 %>% filter(Dom == "5dy6B00") %>% select(Dom_Len) %>% getElement(1) %>% as.numeric()
+        #num_residue <- FRAC_CutOff * DomLen # 5% of the residue
+        #print(is.numeric(num_residue))
+        tmp <- list()
+        if(lddt_frac[[2]][x] != 0){
+          
+          idx <- max(which(lddt_frac[x,] %>% as.numeric() %>% suppressWarnings() >= FRAC_CutOff))
+          dd <- lddt_dd[x,][idx] %>% as.numeric() %>% suppressWarnings()
+          tmp$Dom[1]  <- dom
+          tmp$DistDiff[1] <- dd
+        }else{
+          tmp$Dom[1]  <- dom
+          tmp$DistDiff[1] <- 0
+        }
+        return(tmp)
+      }, 
+      error = function(e){
+        dom <- lddt_frac[["Dom"]][x]
+        tmp$Dom[1]  <- dom
+        tmp$DistDiff[1] <- lddt_dd[x,][2] %>% as.numeric() %>% suppressWarnings()
+        return(tmp)
+      }
+    )
+  
+}))
+
+LDDThi <- as.data.frame(LDDThi)
+
+#following treatment is required for completely removing the imression of the list of list feature
+LDDThi$Dom <- unlist(LDDThi$Dom)
+LDDThi$DistDiff <- unlist(LDDThi$DistDiff)
+
+write.table(LDDThi, file = file.path(data, out_lddthi), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+
+LDDThi <- read.table(file.path(data, out_lddthi), header=T)
+LDDThi %>% filter(DistDiff >= 2.5) %>% dim()
+LDDThi %>% filter(DistDiff >= 5) %>% dim()
+
+```
+
+
+```{r}
+source("/scratch/g/mtzimmermann/NH/AF2_manuscript_codes_data/script07_FATCAT_rmsd.R")
+
+
+if(!file.exists(file.path(dcd, "data09_FATCAT_RMSD.tab"))){
+  fatcat <- NULL
+  system.time(fatcat <- do.call(rbind, pbmcapply::pbmclapply((1:length(CATHUNP2[,1])), getFATCAT2, mc.cores = NUM_CORES))) # with progress bar
+  write.table(fatcat, file = file.path(data, "data09_FATCAT_RMSD.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+}
+fatcat <- read.table(file.path(data, "data09_FATCAT_RMSD.tab"), header = T)
+fatcat %>% dplyr::filter(FCtwist <= 1) %>% dplyr::filter(FCrmsd >= 2.5) %>% dplyr::filter(FCidendity > 99.99) %>% dim()
+fatcat %>% dplyr::filter(FCtwist <= 1) %>% dplyr::filter(FCrmsd >= 5) %>% dplyr::filter(FCidendity > 99.99) %>% dim()
+
+```

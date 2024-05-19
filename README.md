@@ -1,6 +1,6 @@
-Large-Scale Comparative Analysis of Experimental and AlphaFold2 Predicted Structures
+# Large-Scale Comparative Analysis of Experimental and AlphaFold2 Predicted Structures
 
-The analysis is conducted through a series of R notebooks, each designed to perform specific tasks:
+## The analysis is conducted through a series of R notebooks, each designed to perform specific tasks:
 
 •	Notebook_01_pipeline_02.Rmd: This notebook compiles the scripts used to generate the data for the study.
 

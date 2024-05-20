@@ -9,13 +9,104 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+## CATH classes and secondary structure element distribution
 ```{r}
-#data and code dir from git repository
-dcd <- "." # PROVIDE THE PATH TO GIT REPO ON YOUR COMPUTER
-data <- file.path(dcd, "data") # Dir to save data
+
+dua <- NULL; dua <- df02
+df_plot <- NULL; df_plot <- list()
+
+df_plot$Class <- dua$Class
+df_plot$Dom_Len <- dua$Dom_Len
+df_plot$cthHelixF <- dua$cth_Helix_count/dua$Dom_Len # fraction
+df_plot$cthSheetF <- dua$cth_Sheet_count/dua$Dom_Len
+df_plot$cthSecF <- (dua$cth_Helix_count + dua$cth_Sheet_count)/dua$Dom_Len
+df_plot <- as.data.frame(df_plot)
+df_plot <- df_plot[complete.cases(df_plot),]
+
+ggplot(df_plot, aes(cthHelixF)) + geom_density()
+df_plot$cut_cthHelix <- cut(as.numeric(df_plot$cthHelixF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+ggplot(df_plot, aes(cthSheetF)) + geom_density()
+df_plot$cut_cthSheet <- cut(as.numeric(df_plot$cthSheetF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+ggplot(df_plot, aes(cthSecF)) + geom_density()
+df_plot$cut_Sec <- cut(as.numeric(df_plot$cthSecF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
+
+head(df_plot)
+```
+
+```{r fig.width=5}
+
+#Helix
+
+tmpdfH <- df_plot %>% select(c("Class", "cut_cthHelix")) %>% table() %>% as.data.frame()
+ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity")
+p.H <- ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity", position="fill"); p.H
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+tmpdfS <- df_plot %>% select(c("Class", "cut_cthSheet")) %>% table() %>% as.data.frame()
+ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity")
+p.S <- ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity", position="fill"); p.S
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+tmpdfSec <- df_plot %>% select(c("Class", "cut_Sec")) %>% table() %>% as.data.frame()
+ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity")
+p.HS <- ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity", position="fill"); p.HS
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
+tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
+
+
+
+
+print2file=FALSE
+if(print2file){
+
+ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_helix.pdf"),
+
+       plot = p.H,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+  
+  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_sheet.pdf"),
+
+       plot = p.S,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+  
+  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_HS.pdf"),
+
+       plot = p.HS,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+}
+```
+
+
+
+## Domain and fold level grouping
+```{r}
 
 dua <- NULL
-dua <- df02 # Variable is defined in Notebook_01
+dua <- df02
 dim(dua)
 
 
@@ -137,7 +228,7 @@ getDomClstr2 <- function(i, clust_name){
 }
 
 
-# Grouped based on protein specific subdomains
+# Domain level and fold level grouping
 
 SP_C95_XX10_list <- dua$SP_C95_XX10 %>% unique()
 dfSPC95XX10 <- do.call(rbind, pbmcapply::pbmclapply(SP_C95_XX10_list, function(x){
@@ -158,6 +249,100 @@ dffold <- do.call(rbind, pbmcapply::pbmclapply(uniq_fold, function(x){
 # df02[1:100000, ] %>% group_by(SP_C95_XX10) %>% summarise(Rq50 = median(RMSD), Uni=paste0(unique(SP_PRIMARY), collapse = ";")) %>% system.time()
 ```
 
+
+## SecStr gain and loss on  dataset
+```{r, fig.width=5.5, fig.height=3.5}
+
+################################## SecStr gain and loss on domain level grouped dataset
+secdf <- df02 %>% select(all_of(c("cth_secstr_count" , "af2_secstr_count"))) %>% 
+  
+  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count)>0, "Loss", "Gain")) %>%
+  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count) == 0, "NoChange", secstr3class))  %>%
+  
+  
+  mutate(secstr3class2 = if_else((cth_secstr_count - af2_secstr_count)>2, "Loss", "Gain")) %>%
+  mutate(secstr3class2 = if_else(((cth_secstr_count - af2_secstr_count) <= 2 & (cth_secstr_count - af2_secstr_count) >= -2), "NoChange", secstr3class2))  %>%
+  
+  mutate(secstr3class4 = if_else((cth_secstr_count - af2_secstr_count)>4, "Loss", "Gain")) %>%
+  mutate(secstr3class4 = if_else(((cth_secstr_count - af2_secstr_count) <= 4 & (cth_secstr_count - af2_secstr_count) >= -4), "NoChange", secstr3class4))  %>%
+  
+  
+  mutate(secstr3class8 = if_else((cth_secstr_count - af2_secstr_count)>8, "Loss", "Gain")) %>%
+  mutate(secstr3class8 = if_else(((cth_secstr_count - af2_secstr_count) <= 8 & (cth_secstr_count - af2_secstr_count) >= -8), "NoChange", secstr3class8)) 
+
+s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
+s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
+s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
+s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
+
+secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
+secFreq <- table(secdf2) %>% data.frame()
+
+ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
+  scale_fill_manual(values=c("orange2",
+                             "chocolate3",
+                             "darkgreen"))  +   theme_bw()
+secdf <- secdf2 <- NULL
+message("Ungrouped secondary str gain loss data")
+print(secFreq)
+
+```
+
+
+
+## SecStr gain and loss on domain level grouped dataset
+```{r, fig.width=5.5, fig.height=3.5}
+secdf <- dfSPC95XX10 %>% select(all_of(c("cthSSEq50" , "af2SSEq50"))) %>% 
+  
+  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50)>0, "Loss", "Gain")) %>%
+  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50) == 0, "NoChange", secstr3class))  %>%
+  
+  
+  mutate(secstr3class2 = if_else((cthSSEq50 - af2SSEq50)>2, "Loss", "Gain")) %>%
+  mutate(secstr3class2 = if_else(((cthSSEq50 - af2SSEq50) <= 2 & (cthSSEq50 - af2SSEq50) >= -2), "NoChange", secstr3class2))  %>%
+  
+  mutate(secstr3class4 = if_else((cthSSEq50 - af2SSEq50)>4, "Loss", "Gain")) %>%
+  mutate(secstr3class4 = if_else(((cthSSEq50 - af2SSEq50) <= 4 & (cthSSEq50 - af2SSEq50) >= -4), "NoChange", secstr3class4))  %>%
+  
+  
+  mutate(secstr3class8 = if_else((cthSSEq50 - af2SSEq50)>8, "Loss", "Gain")) %>%
+  mutate(secstr3class8 = if_else(((cthSSEq50 - af2SSEq50) <= 8 & (cthSSEq50 - af2SSEq50) >= -8), "NoChange", secstr3class8)) 
+  
+s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
+s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
+s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
+s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
+
+secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
+secFreq <- table(secdf2) %>% data.frame()
+message("Grouped secondary str gain loss data")
+secFreq %>% group_by(Class) %>% mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="0")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22652")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22654")
+secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22658")
+
+
+Plot_sec_str_gainLoss <- ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
+  scale_fill_manual(values=c("orange2",
+                             "chocolate3",
+                             "darkgreen")) +   theme_bw()
+
+
+Plot_sec_str_gainLoss
+
+
+printfile <- FALSE
+if(print2file){
+  ggsave(filename = file.path(data, "Figure_Sec_str_GainLoss.pdf"),
+#ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.jpeg"),
+       plot = Plot_sec_str_gainLoss,
+       width = 4.25,
+       height = 3,
+       units = "in",
+       dpi = 300)
+}
+
+```
 
 ## plot RMSD and R100 median distribution
 ```{r}
@@ -318,7 +503,7 @@ p.ins <- pl+ geom_area(data = bottom1,
 
 
 ```
-## Plot median RMSD distribution for domain group
+## Plot median RMSD distribution for domain group, the inset
 ```{r}
 library(cowplot)
 plot.with.inset <-
@@ -340,189 +525,10 @@ ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.pdf"),
 ```
 
 
-## SecStr gain and loss on  dataset
-```{r, fig.width=5.5, fig.height=3.5}
-
-################################## SecStr gain and loss on domain level grouped dataset
-secdf <- df02 %>% select(all_of(c("cth_secstr_count" , "af2_secstr_count"))) %>% 
-  
-  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count)>0, "Loss", "Gain")) %>%
-  mutate(secstr3class = if_else((cth_secstr_count - af2_secstr_count) == 0, "NoChange", secstr3class))  %>%
-  
-  
-  mutate(secstr3class2 = if_else((cth_secstr_count - af2_secstr_count)>2, "Loss", "Gain")) %>%
-  mutate(secstr3class2 = if_else(((cth_secstr_count - af2_secstr_count) <= 2 & (cth_secstr_count - af2_secstr_count) >= -2), "NoChange", secstr3class2))  %>%
-  
-  mutate(secstr3class4 = if_else((cth_secstr_count - af2_secstr_count)>4, "Loss", "Gain")) %>%
-  mutate(secstr3class4 = if_else(((cth_secstr_count - af2_secstr_count) <= 4 & (cth_secstr_count - af2_secstr_count) >= -4), "NoChange", secstr3class4))  %>%
-  
-  
-  mutate(secstr3class8 = if_else((cth_secstr_count - af2_secstr_count)>8, "Loss", "Gain")) %>%
-  mutate(secstr3class8 = if_else(((cth_secstr_count - af2_secstr_count) <= 8 & (cth_secstr_count - af2_secstr_count) >= -8), "NoChange", secstr3class8)) 
-
-s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
-s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
-s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
-s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
-
-secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
-secFreq <- table(secdf2) %>% data.frame()
-
-ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
-  scale_fill_manual(values=c("orange2",
-                             "chocolate3",
-                             "darkgreen"))  +   theme_bw()
-secdf <- secdf2 <- NULL
-message("Ungrouped secondary str gain loss data")
-print(secFreq)
-
-```
 
 
 
-## SecStr gain and loss on domain level grouped dataset
-```{r, fig.width=5.5, fig.height=3.5}
-secdf <- dfSPC95XX10 %>% select(all_of(c("cthSSEq50" , "af2SSEq50"))) %>% 
-  
-  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50)>0, "Loss", "Gain")) %>%
-  mutate(secstr3class = if_else((cthSSEq50 - af2SSEq50) == 0, "NoChange", secstr3class))  %>%
-  
-  
-  mutate(secstr3class2 = if_else((cthSSEq50 - af2SSEq50)>2, "Loss", "Gain")) %>%
-  mutate(secstr3class2 = if_else(((cthSSEq50 - af2SSEq50) <= 2 & (cthSSEq50 - af2SSEq50) >= -2), "NoChange", secstr3class2))  %>%
-  
-  mutate(secstr3class4 = if_else((cthSSEq50 - af2SSEq50)>4, "Loss", "Gain")) %>%
-  mutate(secstr3class4 = if_else(((cthSSEq50 - af2SSEq50) <= 4 & (cthSSEq50 - af2SSEq50) >= -4), "NoChange", secstr3class4))  %>%
-  
-  
-  mutate(secstr3class8 = if_else((cthSSEq50 - af2SSEq50)>8, "Loss", "Gain")) %>%
-  mutate(secstr3class8 = if_else(((cthSSEq50 - af2SSEq50) <= 8 & (cthSSEq50 - af2SSEq50) >= -8), "NoChange", secstr3class8)) 
-  
-s1 <- data.frame(Class=rep("0", dim(secdf)[1]), SecDiff=secdf$secstr3class) # residue ignored 0
-s2 <- data.frame(Class=rep("\u22652", dim(secdf)[1]), SecDiff=secdf$secstr3class2)# residue ignored 2
-s3 <- data.frame(Class=rep("\u22654", dim(secdf)[1]), SecDiff=secdf$secstr3class4)# residue ignored 4
-s4 <- data.frame(Class=rep("\u22658", dim(secdf)[1]), SecDiff=secdf$secstr3class8)# residue ignored 8
-
-secdf2 <- rbind(s1, s2) %>% rbind(., s3) %>% rbind(., s4)
-secFreq <- table(secdf2) %>% data.frame()
-message("Grouped secondary str gain loss data")
-secFreq %>% group_by(Class) %>% mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="0")
-secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22652")
-secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22654")
-secFreq %>% group_by(Class) %>%mutate(Percent=((Freq*100)/sum(Freq))) %>% filter(Class=="\u22658")
-
-
-Plot_sec_str_gainLoss <- ggplot(secFreq, aes(x=Class, y=Freq)) +geom_bar(aes(fill=SecDiff), stat="identity", position="fill") +
-  scale_fill_manual(values=c("orange2",
-                             "chocolate3",
-                             "darkgreen")) +   theme_bw()
-
-
-Plot_sec_str_gainLoss
-
-
-printfile <- FALSE
-if(print2file){
-  ggsave(filename = file.path(data, "Figure_Sec_str_GainLoss.pdf"),
-#ggsave(filename = file.path(data, "Figure_RMSDdist_with_inset.jpeg"),
-       plot = Plot_sec_str_gainLoss,
-       width = 4.25,
-       height = 3,
-       units = "in",
-       dpi = 300)
-}
-
-```
-
-```{r}
-
-dua <- NULL; dua <- df02
-df_plot <- NULL; df_plot <- list()
-
-df_plot$Class <- dua$Class
-df_plot$Dom_Len <- dua$Dom_Len
-df_plot$cthHelixF <- dua$cth_Helix_count/dua$Dom_Len # fraction
-df_plot$cthSheetF <- dua$cth_Sheet_count/dua$Dom_Len
-df_plot$cthSecF <- (dua$cth_Helix_count + dua$cth_Sheet_count)/dua$Dom_Len
-df_plot <- as.data.frame(df_plot)
-df_plot <- df_plot[complete.cases(df_plot),]
-
-ggplot(df_plot, aes(cthHelixF)) + geom_density()
-df_plot$cut_cthHelix <- cut(as.numeric(df_plot$cthHelixF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
-
-ggplot(df_plot, aes(cthSheetF)) + geom_density()
-df_plot$cut_cthSheet <- cut(as.numeric(df_plot$cthSheetF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
-
-ggplot(df_plot, aes(cthSecF)) + geom_density()
-df_plot$cut_Sec <- cut(as.numeric(df_plot$cthSecF), breaks = c(0, 0.25, 0.50, 0.75, 1),include.lowest = T)
-
-head(df_plot)
-```
-
-```{r fig.width=5}
-
-#Helix
-
-tmpdfH <- df_plot %>% select(c("Class", "cut_cthHelix")) %>% table() %>% as.data.frame()
-ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity")
-p.H <- ggplot(tmpdfH, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthHelix), stat="identity", position="fill"); p.H
-tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
-tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
-tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
-tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
-tmpdfH %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
-
-tmpdfS <- df_plot %>% select(c("Class", "cut_cthSheet")) %>% table() %>% as.data.frame()
-ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity")
-p.S <- ggplot(tmpdfS, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_cthSheet), stat="identity", position="fill"); p.S
-tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
-tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
-tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
-tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
-tmpdfS %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
-
-tmpdfSec <- df_plot %>% select(c("Class", "cut_Sec")) %>% table() %>% as.data.frame()
-ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity")
-p.HS <- ggplot(tmpdfSec, aes(x=Class, y=Freq)) + geom_bar(aes(fill=cut_Sec), stat="identity", position="fill"); p.HS
-tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="1")
-tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="2")
-tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="3")
-tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="4")
-tmpdfSec %>% group_by(Class) %>% mutate(perc=(Freq*100)/sum(Freq)) %>% filter(Class=="6")
-
-
-
-
-print2file=FALSE
-if(print2file){
-
-ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_helix.pdf"),
-
-       plot = p.H,
-       width = 4.25,
-       height = 3,
-       units = "in",
-       dpi = 300)
-  
-  
-  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_sheet.pdf"),
-
-       plot = p.S,
-       width = 4.25,
-       height = 3,
-       units = "in",
-       dpi = 300)
-  
-  ggsave(filename = file.path(data, "Figure_CATH_class_SecStr_content_HS.pdf"),
-
-       plot = p.HS,
-       width = 4.25,
-       height = 3,
-       units = "in",
-       dpi = 300)
-}
-```
-
+##Surface area to volume ratio and  Buried to exposed ratio
 
 ```{r}
 plotdf2 <- list()
@@ -625,6 +631,30 @@ ggsave(filename = file.path(data, "Figure_BEratio.pdf"),
   
 }
 ```
+
+
+### Distribution of domain RMSD within fold level grouping
+
+```{r}
+
+# Check following script for fold level median distribution of domains
+# FoldLevel_dist.Rmd
+
+```
+
+
+## Gene onlology and overrepresentation analysis
+
+```{r}
+
+#Check following for GO annotation and over representation analysis
+#script_GO_analysis.R
+
+
+
+```
+
+
 
 
 

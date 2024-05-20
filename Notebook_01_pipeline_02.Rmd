@@ -33,7 +33,7 @@ FATCAT_EXE <- "/XXX/XXX/Applications/fatcat/FATCAT-dist/FATCATMain/FATCAT"
 ```
 
 ```{r dependencies_and_PATHS, include=FALSE}
-source(file.path(data, "utils.R"))
+source(file.path(dcd, "utils.R"))
 # provide the number of cores available
 NUM_CORES <- 48
 

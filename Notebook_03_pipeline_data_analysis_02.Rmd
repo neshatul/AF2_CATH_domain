@@ -10,9 +10,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+#data and code dir from git repository
+dcd <- "." # PROVIDE THE PATH TO GIT REPO ON YOUR COMPUTER
+data <- file.path(dcd, "data") # Dir to save data
 
 dua <- NULL
-dua <- df02
+dua <- df02 # Variable is defined in Notebook_01
 dim(dua)
 
 

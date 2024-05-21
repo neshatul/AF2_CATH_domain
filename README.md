@@ -9,3 +9,6 @@ Notebook_01_pipeline_02.Rmd: This notebook compiles the scripts used to generate
 Notebook_02_pipeline_data_integration_02.Rmd: This notebook integrates the data generated in Notebook_01 and saves the compiled data in the data directory.
 
 Notebook_03_pipeline_data_analysis_02.Rmd: This notebook generates tables and figures based on the compiled data produced in Notebook_02. The generated figures and tables are also saved in the data directory.
+
+# Contribution
+Michael Zimmermann:mtzimmermann@mcw.edu; Neshatul Haque:nehaque@mcw.edu;neshathaq@gmail.com

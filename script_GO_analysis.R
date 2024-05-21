@@ -6,15 +6,16 @@
 df02_110k <- TRUE
 merge.keep.all <- TRUE
 
-co_pos <- 6
-co_neg <- -25
+co_pos <- 10
+co_neg <- -10  #25
+CO <- 1000 # Limit the abs(diff) to this value
 
 
 if(df02_110k) {
   dataframe <- df02
   GO_annotation.tsv <- "GO_df02_annotation_df02_110k.tsv"
   if(merge.keep.all){
-    outfile <- "GO_df02_110k_MergeKeepAll02"
+    outfile <- "GO_df02_110k_MergeKeepAll02_long"
   } else {outfile <- "GO_df02_110k_NoMergeKeepAll02"}
 }else{
   dataframe <- df01
@@ -326,25 +327,42 @@ plot.go2 <- function(data=NULL, plot.title=NULL, plot.sub.title=NULL){
     )
 }
 
-CO <- 100
-DiffBP <- DiffBP %>% filter((Diff < CO & Diff > -CO))
+# when unwrap is not used longest name on y-axis defines the space occupied on y-acis name.
+# longest word is "positive regulation of vascular associated smooth muscle cell differentiation involved in phenotypic switching"
+# So we adjust one name in every data frame to have longest word
+Add_space_to_first_last_GO_TERM <- function(dfr=NULL){
+  row_last <- dim(dfr)[1]
+  lw <- strsplit("positive regulation of vascular associated smooth
+muscle cell differentiation involved in phenotypic switching", split="")[[1]] %>% 
+    length()
+  space_to_add1 <- lw - length(strsplit(dfr$GO[1], split="")[[1]])
+  space_to_add2 <- lw - length(strsplit(dfr$GO[row_last], split="")[[1]])
+  dfr$GO[1] <- paste0(paste0(rep(" ", space_to_add1+5), collapse = ""), dfr$GO[1], collapse = "")
+  dfr$GO[row_last] <- paste0(paste0(rep(" ", space_to_add2+5), collapse = ""), dfr$GO[row_last], collapse = "")
+  return(dfr)
+}
+
+
+
+
+DiffBP <- DiffBP %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.r.bp <- plot.go(DiffBP, "RMSD GO_BP", CO)
 
-DiffCC <- DiffCC %>% filter((Diff < CO & Diff > -CO))
+DiffCC <- DiffCC %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.r.cc <- plot.go(DiffCC, "RMSD GO_CC", CO)
 
-DiffMF <- DiffMF %>% filter((Diff < CO & Diff > -CO))
+DiffMF <- DiffMF %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.r.mf <- plot.go(DiffMF, "RMSD GO_MF", CO)
 
 
 
-DiffBP_FC <- DiffBP_FC %>% filter((Diff < CO & Diff > -CO))
+DiffBP_FC <- DiffBP_FC %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.f.bp <- plot.go(DiffBP_FC, "FCrmsd GO_BP", CO)
 
-DiffCC_FC <- DiffCC_FC %>% filter((Diff < CO & Diff > -CO))
+DiffCC_FC <- DiffCC_FC %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.f.cc <- plot.go(DiffCC_FC, "FCrmsd GO_CC", CO)
 
-DiffMF_FC <- DiffMF_FC %>% filter((Diff < CO & Diff > -CO))
+DiffMF_FC <- DiffMF_FC %>% Add_space_to_first_last_GO_TERM() %>% filter((Diff < CO & Diff > -CO))
 p.f.mf <- plot.go(DiffMF_FC, "FCrmsd GO_MF", CO)
 
 
@@ -364,30 +382,42 @@ if(saveplot){
   pdf(file.path(data, paste0(outfile, "_02.pdf")), height = 12, width = 8.5)
 }
 DiffBP <- DiffBP %>% filter((Diff < CO & Diff > -CO))
-p.r.bp <- plot.go2(DiffBP, "RMSD GO_BP", CO)
+p.r.bp <- DiffBP %>% plot.go2(., "RMSD GO_BP", CO)
+p.r.bp_pos <- DiffBP %>% filter(Diff>0) %>% plot.go2(., "RMSD GO_BP positive", CO)
+p.r.bp_neg <- DiffBP %>% filter(Diff<0) %>% plot.go2(., "RMSD GO_BP negative", CO)
 
 DiffCC <- DiffCC %>% filter((Diff < CO & Diff > -CO))
-p.r.cc <- plot.go2(DiffCC, "RMSD GO_CC", CO)
+p.r.cc <- DiffCC %>% plot.go2(., "RMSD GO_CC", CO)
+p.r.cc_pos <- DiffCC %>% filter(Diff>0) %>% plot.go2(., "RMSD GO_CC positive", CO)
+p.r.cc_neg <- DiffCC %>% filter(Diff<0) %>% plot.go2(., "RMSD GO_CC negative", CO)
 
 DiffMF <- DiffMF %>% filter((Diff < CO & Diff > -CO))
-p.r.mf <- plot.go2(DiffMF, "RMSD GO_MF", CO)
+p.r.mf <- DiffMF %>% plot.go2(., "RMSD GO_MF", CO)
+p.r.mf_pos <- DiffMF %>% filter(Diff>0) %>% plot.go2(., "RMSD GO_MF", CO)
+p.r.mf_neg <- DiffMF %>% filter(Diff<0) %>% plot.go2(., "RMSD GO_MF", CO)
 
 
 
 DiffBP_FC <- DiffBP_FC %>% filter((Diff < CO & Diff > -CO))
-p.f.bp <- plot.go(DiffBP_FC, "FCrmsd GO_BP", CO)
+p.f.bp <- plot.go2(DiffBP_FC, "FCrmsd GO_BP", CO)
 
 DiffCC_FC <- DiffCC_FC %>% filter((Diff < CO & Diff > -CO))
-p.f.cc <- plot.go(DiffCC_FC, "FCrmsd GO_CC", CO)
+p.f.cc <- plot.go2(DiffCC_FC, "FCrmsd GO_CC", CO)
 
 DiffMF_FC <- DiffMF_FC %>% filter((Diff < CO & Diff > -CO))
-p.f.mf <- plot.go(DiffMF_FC, "FCrmsd GO_MF", CO)
-
+p.f.mf <- plot.go2(DiffMF_FC, "FCrmsd GO_MF", CO)
 
 
 print(p.r.bp)
 print(p.r.cc)
 print(p.r.mf)
+
+# print(p.r.bp_pos)
+# print(p.r.bp_neg)
+# print(p.r.cc_pos)
+# print(p.r.cc_neg)
+# print(p.r.mf_pos)
+# print(p.r.mf_neg)
 
 print(p.f.bp)
 print(p.f.cc)

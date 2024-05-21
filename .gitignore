@@ -3,3 +3,6 @@
 *.txt
 *.test
 .Rproj.user
+.Rproj
+.RData
+.Rhistory

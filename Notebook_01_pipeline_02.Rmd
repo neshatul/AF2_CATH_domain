@@ -1,12 +1,8 @@
 ---
 title: "AF2 CATH project"
-author: "Neshatul Haque"
-date: '2022-09-27'
 output:
   pdf_document: default
-  html_document: default
-fig_width: 6 
-fig_height: 3 
+  html_notebook: default
 ---
 
 ```{r setup, include=FALSE}

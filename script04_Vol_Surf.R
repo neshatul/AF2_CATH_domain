@@ -1,6 +1,4 @@
 
-setwd("/scratch/g/mtzimmermann/data/Cath_Local_db") #This is required for pdb2xyzr programm to read the std atom typrom the cwd
-outputdir <- "/scratch/g/mtzimmermann/molecular_modeling/AF2_protein_dynamics"
 library(dplyr)
 
 

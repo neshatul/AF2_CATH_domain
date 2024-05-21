@@ -1,3 +1,5 @@
+*.pdb
+*.xyz
 *.txt
 *.test
 .Rproj.user

@@ -41,7 +41,7 @@ NUM_CORES <- 48
 #CATH_DB_PATH <- "/hpc/refdata/cathdb/v4_3_0"  
 CATH_DB_PATH <- file.path(data, "CATHdb/v4_3_0")
 if(!dir.exists(CATH_DB_PATH)){
-  dir.create(CATH_DB_PATH)
+  dir.create(CATH_DB_PATH, recursive = T)
 }
 
 CATH_DB_SEQ_PATH <- file.path(data, "CATHdb/v4_3_0_seq")
@@ -129,7 +129,6 @@ if(downloadCATH) {
     #print(unp)
   }
 }
-
 ```
 
 
@@ -312,8 +311,8 @@ if(!file.exists(file.path(data, "data05_SeqClust.tab"))){
 ```{r}
 source(file.path(dcd, "script06_SecStr_loss.R"))
 
-
-## Secondary str of CATH domain
+if(!file.exists(file.path(data, "data06_SecStr_loss.tab"))){
+  ## Secondary str of CATH domain
 #RUN stride on PDBs of CATH domain
 PDB_LIST <- CATHUNP2$Dom
 TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
@@ -334,10 +333,10 @@ TEMP <- pbmcapply::pbmclapply(PDB_LIST, function(x){
   write.table(sse, file = outFile, row.names = F, col.names = T, quote = F, sep = "\t")
 }, mc.cores=NUM_CORES)
 
-if(!file.exists(file.path(dcd, "data06_SecStr_loss.tab"))){
+
   SecStr <- NULL
   system.time(SecStr <- do.call(rbind, pbmcapply::pbmclapply(1:length(CATHUNP2[,1]), getSecStr, mc.cores = NUM_CORES))) 
-  write.table(SecStr, file = file.path(data, "data06_SecStr_loss_test.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
+  write.table(SecStr, file = file.path(data, "data06_SecStr_loss.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")
 }
 
 ```
@@ -348,7 +347,7 @@ if(!file.exists(file.path(dcd, "data06_SecStr_loss.tab"))){
 source("/scratch/g/mtzimmermann/NH/AF2_manuscript_codes_data/script07_FATCAT_rmsd.R")
 
 
-if(!file.exists(file.path(dcd, "data09_FATCAT_RMSD.tab"))){
+if(!file.exists(file.path(data, "data09_FATCAT_RMSD.tab"))){
   fatcat <- NULL
   system.time(fatcat <- do.call(rbind, pbmcapply::pbmclapply((1:length(CATHUNP2[,1])), getFATCAT2, mc.cores = NUM_CORES))) 
   write.table(fatcat, file = file.path(data, "data09_FATCAT_RMSD.tab"), row.names = F,      col.names = T, quote = F, sep = "\t")

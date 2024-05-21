@@ -246,7 +246,7 @@ GetRCSBcoordFile <- function(pdbid=NULL, FileType=NULL, Compress=T, output_path 
 
 
 # standard amino acid area. Data obtained from NACCESS
-sa <- read.table(file.path(data,"standard.data", skip = 1))
+sa <- read.table(file.path(data,"standard.data"), skip = 1)
 #STANDARD ACCESSIBILITES FOR PROBE 1.40 AND RADII vdw.radii
 # REM RES _ NUM      All-atoms   Total-Side   Main-Chain    Non-polar    All polar
 # REM                ABS   REL    ABS   REL    ABS   REL    ABS   REL    ABS   REL

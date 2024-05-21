@@ -1,8 +1,8 @@
 ---
-title: "AF2conform_data_analysis"
-author: "Neshatul Haque"
-date: '2023-03-16'
-output: html_document
+title: "AF2 CATH project"
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 ```{r setup, include=FALSE}

@@ -319,8 +319,8 @@ plot.go2 <- function(data=NULL, plot.title=NULL, plot.sub.title=NULL){
     theme_bw(base_size = theme_base_size)+
     labs(
       title = plot.title,
-      subtitle = paste0("RMSD (High - Low) | Xlim ( -", plot.sub.title , " to ", plot.sub.title," )" ),
-      caption = stringr::str_interp("Count diff |${co_pos} & ${co_neg}| are removed."),
+#      subtitle = paste0("RMSD (High - Low) | Xlim ( -", plot.sub.title , " to ", plot.sub.title," )" ),
+#      caption = stringr::str_interp("Count diff |${co_pos} & ${co_neg}| are removed."),
       #tag = "Figure 1",
       x = "Difference of count",
       y = ""

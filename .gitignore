@@ -3,6 +3,6 @@
 *.txt
 *.test
 .Rproj.user
-.Rproj
+*.Rproj
 .RData
 .Rhistory

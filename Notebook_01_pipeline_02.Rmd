@@ -1,5 +1,5 @@
 ---
-title: "AF2pdbComp"
+title: "AF2 CATH project"
 author: "Neshatul Haque"
 date: '2022-09-27'
 output:
